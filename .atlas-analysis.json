@@ -1,0 +1,161 @@
+{
+  "projectType": "sdk-library",
+  "projectName": "Moonshine Voice",
+  "projectDescription": "Fast and accurate automatic speech recognition (ASR) library optimized for edge devices and real-time voice applications",
+  "theme": "aspen",
+  "primaryColor": "#4F46E5",
+  "lightColor": "#818CF8",
+  "darkColor": "#3730A3",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "installation"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/architecture",
+              "concepts/transcription",
+              "concepts/streaming",
+              "concepts/intent-recognition",
+              "concepts/models"
+            ]
+          },
+          {
+            "group": "Platform Guides",
+            "pages": [
+              "platforms/python",
+              "platforms/ios",
+              "platforms/android",
+              "platforms/macos",
+              "platforms/linux",
+              "platforms/windows",
+              "platforms/raspberry-pi"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/transcription",
+              "guides/mic-transcription",
+              "guides/command-recognition",
+              "guides/streaming",
+              "guides/speaker-identification",
+              "guides/downloading-models",
+              "guides/debugging"
+            ]
+          },
+          {
+            "group": "Models",
+            "pages": [
+              "models/overview",
+              "models/available-models",
+              "models/benchmarks",
+              "models/customization"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Python API",
+            "pages": [
+              "api/python/transcriber",
+              "api/python/mic-transcriber",
+              "api/python/stream",
+              "api/python/intent-recognizer",
+              "api/python/data-structures",
+              "api/python/events"
+            ]
+          },
+          {
+            "group": "Swift API",
+            "pages": [
+              "api/swift/transcriber",
+              "api/swift/mic-transcriber",
+              "api/swift/data-structures"
+            ]
+          },
+          {
+            "group": "Java API",
+            "pages": [
+              "api/java/transcriber",
+              "api/java/data-structures"
+            ]
+          },
+          {
+            "group": "C++ API",
+            "pages": [
+              "api/cpp/transcriber",
+              "api/cpp/data-structures"
+            ]
+          },
+          {
+            "group": "C API",
+            "pages": [
+              "api/c/overview",
+              "api/c/functions"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Resources",
+        "groups": [
+          {
+            "group": "Additional Resources",
+            "pages": [
+              "resources/examples",
+              "resources/building-from-source",
+              "resources/contributing",
+              "resources/faq",
+              "resources/support"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Real-time speech-to-text transcription with streaming support",
+    "Voice activity detection (VAD) and automatic segmentation",
+    "Intent recognition for voice commands with semantic matching",
+    "Speaker identification (diarization)",
+    "Multi-language support (English, Spanish, Mandarin, Japanese, Korean, Vietnamese, Ukrainian, Arabic)",
+    "Cross-platform support (Python, iOS, Android, macOS, Linux, Windows, Raspberry Pi)",
+    "Low-latency processing optimized for edge devices",
+    "Multiple model architectures (Tiny, Base, Small Streaming, Medium Streaming)"
+  ],
+  "publicApiSurface": [
+    "Transcriber",
+    "MicTranscriber",
+    "Stream",
+    "IntentRecognizer",
+    "TranscriptEventListener",
+    "TranscriptLine",
+    "Transcript",
+    "TranscriptEvent (LineStarted, LineUpdated, LineTextChanged, LineCompleted)",
+    "IntentMatch",
+    "ModelArch",
+    "get_model_for_language()",
+    "get_embedding_model()",
+    "load_wav_file()",
+    "transcribe_without_streaming()",
+    "start()",
+    "stop()",
+    "add_audio()",
+    "update_transcription()",
+    "create_stream()",
+    "register_intent()"
+  ]
+}

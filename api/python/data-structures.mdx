@@ -289,6 +289,102 @@ model_path, model_arch = get_embedding_model(
 
 **Returns:** Tuple of `(model_path: str, model_arch: int)`
 
+### supported_languages
+
+Get list of supported language codes.
+
+```python
+from moonshine_voice import supported_languages
+
+languages = supported_languages()  # Returns: ['en', 'es', 'ar', 'ja', 'ko', 'zh', 'uk', 'vi']
+```
+
+**Returns:** List of language codes
+
+### supported_languages_friendly
+
+Get dictionary of language codes to full names.
+
+```python
+from moonshine_voice import supported_languages_friendly
+
+langs = supported_languages_friendly()
+# Returns: {'en': 'English', 'es': 'Spanish', 'ar': 'Arabic', ...}
+```
+
+**Returns:** Dictionary mapping language codes to display names
+
+### model_arch_to_string
+
+Convert ModelArch enum to string name.
+
+```python
+from moonshine_voice import ModelArch, model_arch_to_string
+
+name = model_arch_to_string(ModelArch.BASE)  # Returns: "base"
+```
+
+### string_to_model_arch
+
+Convert string name to ModelArch enum.
+
+```python
+from moonshine_voice import string_to_model_arch
+
+arch = string_to_model_arch("base")  # Returns: ModelArch.BASE
+```
+
+### get_assets_path
+
+Get path to bundled assets directory.
+
+```python
+from moonshine_voice import get_assets_path
+
+path = get_assets_path()
+```
+
+**Returns:** Path to assets directory
+
+### get_model_path
+
+Get standard model cache path.
+
+```python
+from moonshine_voice import get_model_path
+
+path = get_model_path()
+```
+
+**Returns:** Path to model cache directory
+
+## Error Classes
+
+### MoonshineError
+
+Base exception class for all Moonshine errors.
+
+```python
+from moonshine_voice import MoonshineError
+
+try:
+    transcriber = Transcriber(model_path="invalid/path")
+except MoonshineError as e:
+    print(f"Error: {e}")
+```
+
+### MoonshineUnknownError
+
+Raised when an unknown error occurs.
+
+### MoonshineInvalidHandleError
+
+Raised when an invalid transcriber or recognizer handle is used.
+
+### MoonshineInvalidArgumentError
+
+Raised when invalid arguments are passed to a function.
+
 ## See Also
 
 - [Transcriber API](/api/python/transcriber) - Using these structures

@@ -1,0 +1,334 @@
+---
+title: 'Python Platform Guide'
+description: 'Complete guide to using Moonshine Voice in Python applications'
+icon: 'python'
+---
+
+Moonshine Voice provides a comprehensive Python package that works across Windows, macOS, and Linux. The Python interface is the most feature-complete and easiest to get started with.
+
+## Installation
+
+<Steps>
+  <Step title="Install the Package">
+    Install Moonshine Voice from PyPI using pip:
+    
+    ```bash
+    pip install moonshine-voice
+    ```
+    
+    **Requirements:**
+    - Python 3.8 or later
+    - Works on Windows, macOS, and Linux
+  </Step>
+  
+  <Step title="Download Models">
+    Download the speech-to-text models for your target language:
+    
+    ```bash
+    python -m moonshine_voice.download --language en
+    ```
+    
+    The script will download models and display:
+    - Model path (where files are stored)
+    - Model architecture number (needed for initialization)
+    
+    <Note>
+      Models are cached in `~/Library/Caches/moonshine_voice` on macOS. Set the `MOONSHINE_VOICE_CACHE` environment variable to use a different location.
+    </Note>
+  </Step>
+  
+  <Step title="Quick Test">
+    Test the installation by transcribing microphone input:
+    
+    ```bash
+    python -m moonshine_voice.mic_transcriber --language en
+    ```
+  </Step>
+</Steps>
+
+## Basic Usage
+
+### Microphone Transcription
+
+The simplest way to get started is with the `MicTranscriber` class:
+
+```python
+import time
+from moonshine_voice import (
+    MicTranscriber,
+    TranscriptEventListener,
+    get_model_for_language,
+)
+
+# Download and load models automatically
+model_path, model_arch = get_model_for_language("en")
+
+# Create transcriber connected to default microphone
+mic_transcriber = MicTranscriber(
+    model_path=model_path, 
+    model_arch=model_arch
+)
+
+# Define event handlers
+class TestListener(TranscriptEventListener):
+    def on_line_started(self, event):
+        print(f"Line started: {event.line.text}")
+
+    def on_line_text_changed(self, event):
+        print(f"Line text changed: {event.line.text}")
+
+    def on_line_completed(self, event):
+        print(f"Line completed: {event.line.text}")
+
+listener = TestListener()
+mic_transcriber.add_listener(listener)
+mic_transcriber.start()
+
+print("Listening to the microphone, press Ctrl+C to stop...")
+
+try:
+    while True:
+        time.sleep(0.1)
+finally:
+    mic_transcriber.stop()
+    mic_transcriber.close()
+```
+
+### File Transcription
+
+Transcribe audio files without streaming:
+
+```python
+from moonshine_voice import (
+    Transcriber,
+    load_wav_file,
+    get_model_for_language,
+)
+
+model_path, model_arch = get_model_for_language("en")
+transcriber = Transcriber(model_path=model_path, model_arch=model_arch)
+
+# Load and transcribe a WAV file
+audio_data, sample_rate = load_wav_file("audio.wav")
+transcript = transcriber.transcribe_without_streaming(
+    audio_data, 
+    sample_rate=sample_rate
+)
+
+# Print results
+for line in transcript.lines:
+    start = line.start_time
+    end = line.start_time + line.duration
+    print(f"[{start:.2f}s - {end:.2f}s] {line.text}")
+```
+
+### Streaming Transcription
+
+For real-time processing with custom audio sources:
+
+```python
+from moonshine_voice import Transcriber, TranscriptEventListener
+
+transcriber = Transcriber(model_path=model_path, model_arch=model_arch)
+
+class StreamListener(TranscriptEventListener):
+    def on_line_completed(self, event):
+        print(f"Transcribed: {event.line.text}")
+
+listener = StreamListener()
+transcriber.add_listener(listener)
+transcriber.start()
+
+# Feed audio in chunks (any duration, any sample rate, mono)
+for audio_chunk in your_audio_source():
+    transcriber.add_audio(audio_chunk, sample_rate)
+
+transcriber.stop()
+```
+
+## Voice Commands
+
+Use the `IntentRecognizer` for semantic command matching:
+
+```python
+from moonshine_voice import (
+    MicTranscriber,
+    IntentRecognizer,
+    get_embedding_model,
+    get_model_for_language
+)
+
+# Load models
+embedding_model_path, embedding_model_arch = get_embedding_model()
+model_path, model_arch = get_model_for_language("en")
+
+# Create intent recognizer
+intent_recognizer = IntentRecognizer(
+    model_path=embedding_model_path,
+    model_arch=embedding_model_arch
+)
+
+# Register intent handlers
+def on_lights_on(trigger: str, utterance: str, similarity: float):
+    print(f"💡 Turning lights on (confidence: {similarity:.0%})")
+
+def on_lights_off(trigger: str, utterance: str, similarity: float):
+    print(f"🌑 Turning lights off (confidence: {similarity:.0%})")
+
+intent_recognizer.register_intent("turn on the lights", on_lights_on)
+intent_recognizer.register_intent("turn off the lights", on_lights_off)
+
+# Connect to microphone
+mic_transcriber = MicTranscriber(model_path=model_path, model_arch=model_arch)
+mic_transcriber.add_listener(intent_recognizer)
+mic_transcriber.start()
+
+try:
+    while True:
+        time.sleep(0.1)
+except KeyboardInterrupt:
+    pass
+finally:
+    intent_recognizer.close()
+    mic_transcriber.stop()
+    mic_transcriber.close()
+```
+
+<Note>
+The intent recognizer uses semantic matching, so "Let there be light" will match "turn on the lights" with high confidence.
+</Note>
+
+## Multiple Languages
+
+Moonshine supports English, Spanish, Mandarin, Japanese, Korean, Vietnamese, Ukrainian, and Arabic:
+
+```python
+from moonshine_voice import get_model_for_language, supported_languages
+
+# See available languages
+print(supported_languages())
+
+# Load Spanish model
+model_path, model_arch = get_model_for_language("es")
+
+# Load Japanese model
+model_path, model_arch = get_model_for_language("ja")
+```
+
+<Warning>
+For non-Latin alphabet languages (Japanese, Korean, Arabic, Mandarin, Ukrainian), set `max_tokens_per_second=13.0` when creating the transcriber to avoid hallucination detection cutting off valid outputs.
+</Warning>
+
+## Dependencies
+
+The Python package automatically includes these dependencies:
+
+- **numpy** - Array operations
+- **sounddevice** - Microphone access
+- **requests** - Model downloading
+- **tqdm** - Download progress bars
+- **filelock** - Thread-safe model caching
+- **platformdirs** - Cross-platform cache directories
+
+## Platform-Specific Notes
+
+### macOS
+- Models cached in `~/Library/Caches/moonshine_voice`
+- Requires microphone permission (system will prompt)
+- Uses CoreAudio for microphone access
+
+### Linux
+- Models cached in `~/.cache/moonshine_voice`
+- May require ALSA/PulseAudio for microphone access
+- See [Linux guide](/platforms/linux) for audio setup
+
+### Windows
+- Models cached in `%LOCALAPPDATA%\moonshine_voice\Cache`
+- Uses Windows Audio Session API (WASAPI)
+- Ensure microphone permissions enabled in Windows Settings
+
+## Command-Line Tools
+
+Moonshine Voice includes several command-line utilities:
+
+### Microphone Transcriber
+```bash
+python -m moonshine_voice.mic_transcriber --language en
+```
+
+### Intent Recognizer
+```bash
+python -m moonshine_voice.intent_recognizer
+
+# Custom intents
+python -m moonshine_voice.intent_recognizer --intents "Turn left, turn right, go forward, go backward"
+```
+
+### Model Downloader
+```bash
+# Download specific language
+python -m moonshine_voice.download --language en
+
+# Download specific architecture
+python -m moonshine_voice.download --language en --model-arch 1
+
+# See available languages
+python -m moonshine_voice.download --language foo
+```
+
+## Debugging
+
+### Save Input Audio
+
+Debug audio issues by saving received audio:
+
+```python
+transcriber = Transcriber(
+    model_path=model_path,
+    model_arch=model_arch,
+    options={'save_input_wav_path': '.'}
+)
+```
+
+Audio will be saved to `input_1.wav` (and `input_2.wav` for additional streams).
+
+### API Call Logging
+
+Trace API calls for debugging timing issues:
+
+```python
+transcriber = Transcriber(
+    model_path=model_path,
+    model_arch=model_arch,
+    options={'log_api_calls': True}
+)
+```
+
+### Console Logs
+
+The core library writes detailed error messages to stderr. Always check console output when debugging.
+
+## Example Projects
+
+Find complete examples in the repository:
+
+- **basic_transcription.py** - File transcription with and without streaming
+- **mic_transcription.py** - Live microphone transcription
+- **intent_recognition.py** - Voice command recognition
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="API Reference" icon="code" href="/api-reference/python">
+    Detailed API documentation
+  </Card>
+  <Card title="Models" icon="brain" href="/models">
+    Available models and architectures
+  </Card>
+  <Card title="Examples" icon="flask" href="/examples/python">
+    More Python examples
+  </Card>
+  <Card title="Troubleshooting" icon="wrench" href="/troubleshooting/python">
+    Common issues and solutions
+  </Card>
+</CardGroup>

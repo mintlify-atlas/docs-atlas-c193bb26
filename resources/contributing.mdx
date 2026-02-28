@@ -1,0 +1,249 @@
+---
+title: Contributing
+description: Contribute to Moonshine Voice and help build better voice interfaces
+---
+
+Moonshine Voice is an open-source project, and we welcome contributions from the community!
+
+## Ways to Contribute
+
+There are many ways to contribute to Moonshine Voice:
+
+- **Report bugs**: Found an issue? Report it on GitHub
+- **Suggest features**: Have ideas for improvements? We'd love to hear them
+- **Fix bugs**: Submit pull requests to fix known issues
+- **Add features**: Implement new functionality
+- **Improve documentation**: Help make the docs clearer and more comprehensive
+- **Create examples**: Share examples of how you're using Moonshine Voice
+- **Help others**: Answer questions on Discord or GitHub Discussions
+
+## Getting Started
+
+### 1. Fork and Clone
+
+Fork the repository on GitHub and clone it locally:
+
+```bash
+git clone https://github.com/YOUR_USERNAME/moonshine.git
+cd moonshine
+```
+
+### 2. Set Up Your Development Environment
+
+Follow the [Building from Source](/resources/building-from-source) guide to build the project:
+
+```bash
+cd core
+mkdir -p build
+cd build
+cmake ..
+cmake --build .
+```
+
+Run the tests to ensure everything works:
+
+```bash
+./scripts/run-core-tests.sh
+```
+
+### 3. Create a Branch
+
+Create a feature branch for your changes:
+
+```bash
+git checkout -b feature/my-new-feature
+```
+
+Or for bug fixes:
+
+```bash
+git checkout -b fix/issue-123
+```
+
+### 4. Make Your Changes
+
+- Write clear, well-documented code
+- Follow the existing code style
+- Add tests for new features
+- Update documentation as needed
+
+### 5. Test Your Changes
+
+Make sure all tests pass:
+
+```bash
+# Core library tests
+./scripts/run-core-tests.sh
+
+# Python tests (if applicable)
+cd python
+pytest
+```
+
+### 6. Commit Your Changes
+
+Write clear commit messages:
+
+```bash
+git add .
+git commit -m "Add feature: brief description of what you did"
+```
+
+### 7. Submit a Pull Request
+
+Push your changes to GitHub:
+
+```bash
+git push origin feature/my-new-feature
+```
+
+Then open a pull request on GitHub:
+
+1. Go to [github.com/moonshine-ai/moonshine](https://github.com/moonshine-ai/moonshine)
+2. Click "Pull Requests" → "New Pull Request"
+3. Select your branch
+4. Describe your changes
+5. Submit the PR
+
+## Contribution Guidelines
+
+### Code Style
+
+- **C++**: Follow the existing style in the codebase
+  - Use meaningful variable names
+  - Add comments for complex logic
+  - Keep functions focused and concise
+
+- **Python**: Follow PEP 8
+  - Use 4 spaces for indentation
+  - Maximum line length: 88 characters (Black formatter)
+  - Use type hints where appropriate
+
+- **Swift**: Follow Swift conventions
+  - Use camelCase for variables and functions
+  - Use PascalCase for types
+
+### Documentation
+
+- Update documentation for any API changes
+- Add docstrings to new functions and classes
+- Include code examples where helpful
+- Update the README if needed
+
+### Testing
+
+- Add unit tests for new functionality
+- Ensure all existing tests pass
+- Test on multiple platforms if possible
+- Include test audio files if needed (keep them small)
+
+### Commit Messages
+
+Write clear, concise commit messages:
+
+- Use the imperative mood ("Add feature" not "Added feature")
+- First line: brief summary (50 chars or less)
+- Blank line, then detailed explanation if needed
+- Reference issue numbers when applicable
+
+Example:
+```
+Fix memory leak in audio buffer handling
+
+The audio buffer was not being properly released after
+transcription completion. This adds proper cleanup in
+the stop() method.
+
+Fixes #123
+```
+
+## Reporting Issues
+
+When reporting bugs, please include:
+
+- **Description**: What went wrong?
+- **Steps to reproduce**: How can we replicate the issue?
+- **Expected behavior**: What should have happened?
+- **Actual behavior**: What actually happened?
+- **Environment**:
+  - OS and version
+  - Moonshine Voice version
+  - Programming language and version
+- **Logs**: Include relevant error messages or logs
+- **Audio samples**: If possible, include audio that triggers the issue
+
+[Report issues on GitHub](https://github.com/moonshine-ai/moonshine/issues)
+
+## Suggesting Features
+
+When suggesting new features:
+
+- Describe the use case
+- Explain why it would be useful
+- Provide examples of how it might work
+- Consider backwards compatibility
+- Be open to discussion and iteration
+
+[Suggest features on GitHub](https://github.com/moonshine-ai/moonshine/issues)
+
+## License
+
+By contributing to Moonshine Voice, you agree that your contributions will be licensed under:
+
+- **MIT License** for code and English-language models
+- **Moonshine Community License** for models in other languages (non-commercial use)
+
+See the [LICENSE](https://github.com/moonshine-ai/moonshine/blob/main/LICENSE) file for full details.
+
+### MIT License (Code and English Models)
+
+The code and English-language models are released under the MIT License, which allows:
+- Commercial use
+- Modification
+- Distribution
+- Private use
+
+With the requirement to include the original license and copyright notice.
+
+### Moonshine Community License (Non-English Models)
+
+Models for languages other than English are released under the Moonshine Community License:
+- **Free** for research and non-commercial use
+- **Free** for commercial use if your organization generates less than $1,000,000 USD in annual revenue
+- **Requires a commercial license** if your revenue exceeds $1,000,000 USD
+
+[Learn more about the Moonshine Community License](https://moonshine.ai/community-license)
+
+## Code of Conduct
+
+We are committed to providing a welcoming and inclusive environment for all contributors.
+
+- Be respectful and professional
+- Welcome newcomers and help them learn
+- Focus on constructive feedback
+- Respect different viewpoints and experiences
+- Accept responsibility and apologize if you make mistakes
+
+## Getting Help
+
+Need help contributing?
+
+- **Discord**: [Join our community](https://discord.gg/27qp9zSRXF) for live chat
+- **GitHub Discussions**: Ask questions and discuss ideas
+- **Email**: [contact@moonshine.ai](mailto:contact@moonshine.ai)
+
+## Recognition
+
+We appreciate all contributions! Contributors are recognized:
+- In release notes
+- In the project README
+- Through GitHub's contributor tracking
+
+Thank you for helping make Moonshine Voice better!
+
+## Next Steps
+
+- [Build from source](/resources/building-from-source)
+- [Explore examples](/resources/examples)
+- [Join the community](/resources/support)
+- [Visit the GitHub repository](https://github.com/moonshine-ai/moonshine)

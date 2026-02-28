@@ -1,0 +1,544 @@
+---
+title: 'Raspberry Pi Platform Guide'
+description: 'Complete guide to using Moonshine Voice on Raspberry Pi devices'
+icon: 'raspberry-pi'
+---
+
+Moonshine Voice is optimized for Raspberry Pi, enabling on-device voice interfaces for robotics, IoT devices, and embedded projects.
+
+## Hardware Requirements
+
+- **Raspberry Pi 4** or **Raspberry Pi 5** (recommended)
+- Raspberry Pi 3 works but with higher latency
+- **USB microphone** for audio input
+- SD card with at least 8GB (16GB+ recommended)
+- Raspberry Pi OS (Bullseye or later)
+
+<Note>
+Raspberry Pi doesn't have a built-in microphone, so you'll need a USB microphone. Any standard USB microphone should work.
+</Note>
+
+## Installation
+
+<Steps>
+  <Step title="Update System">
+    Start with a fresh system update:
+    
+    ```bash
+    sudo apt-get update
+    sudo apt-get upgrade -y
+    ```
+  </Step>
+  
+  <Step title="Install Moonshine Voice">
+    Install using pip with the `--break-system-packages` flag:
+    
+    ```bash
+    sudo pip install --break-system-packages moonshine-voice
+    ```
+    
+    <Warning>
+    The `--break-system-packages` flag is needed on Raspberry Pi OS. Alternatively, use a virtual environment (see below).
+    </Warning>
+  </Step>
+  
+  <Step title="Download Models">
+    Download the English models:
+    
+    ```bash
+    python -m moonshine_voice.download --language en
+    ```
+    
+    Note: This may take a few minutes on Pi's slower internet connection.
+  </Step>
+  
+  <Step title="Test Installation">
+    Connect your USB microphone and test:
+    
+    ```bash
+    python -m moonshine_voice.mic_transcriber --language en
+    ```
+    
+    Speak into the microphone - you should see transcriptions appear!
+  </Step>
+</Steps>
+
+## Alternative: Virtual Environment Setup
+
+If you prefer not to use `--break-system-packages`, use a virtual environment:
+
+```bash
+# Install uv (modern Python package manager)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Create virtual environment
+uv venv
+source .venv/bin/activate
+
+# Install Moonshine Voice
+uv pip install moonshine-voice
+
+# Download models
+python -m moonshine_voice.download --language en
+```
+
+<Note>
+If using a virtual environment, remember to run `source .venv/bin/activate` each time you log in before using Moonshine.
+</Note>
+
+## Quick Start Examples
+
+### Download Pre-built Examples
+
+Get Raspberry Pi-specific examples:
+
+```bash
+wget https://github.com/moonshine-ai/moonshine/releases/latest/download/raspberry-pi-examples.tar.gz
+tar -xzf raspberry-pi-examples.tar.gz
+cd raspberry-pi-examples
+```
+
+### Voice-Controlled Robot Example
+
+The "My Dalek" example demonstrates voice command recognition:
+
+```bash
+cd my-dalek
+python my-dalek.py
+```
+
+This example recognizes movement commands like:
+- "Move forward" / "Go ahead" / "Advance"
+- "Move backward" / "Go back" / "Reverse"
+- "Turn left" / "Rotate left"
+- "Turn right" / "Rotate right"
+
+## Basic Transcription Example
+
+```python
+import time
+from moonshine_voice import (
+    MicTranscriber,
+    TranscriptEventListener,
+    get_model_for_language,
+)
+
+# Load model
+model_path, model_arch = get_model_for_language("en")
+
+# Create transcriber
+mic_transcriber = MicTranscriber(
+    model_path=model_path,
+    model_arch=model_arch
+)
+
+class ConsoleListener(TranscriptEventListener):
+    def on_line_completed(self, event):
+        print(f"Heard: {event.line.text}")
+
+listener = ConsoleListener()
+mic_transcriber.add_listener(listener)
+mic_transcriber.start()
+
+print("Listening... Press Ctrl+C to stop")
+
+try:
+    while True:
+        time.sleep(0.1)
+except KeyboardInterrupt:
+    print("\nStopping...")
+finally:
+    mic_transcriber.stop()
+    mic_transcriber.close()
+```
+
+## Voice Commands for Robotics
+
+Use `IntentRecognizer` for robot control:
+
+```python
+import sys
+import time
+from moonshine_voice import (
+    MicTranscriber,
+    IntentRecognizer,
+    get_embedding_model,
+    get_model_for_language,
+)
+
+# Load models
+embedding_model_path, embedding_model_arch = get_embedding_model()
+model_path, model_arch = get_model_for_language("en")
+
+# Create intent recognizer
+intent_recognizer = IntentRecognizer(
+    model_path=embedding_model_path,
+    model_arch=embedding_model_arch,
+    threshold=0.7  # Confidence threshold
+)
+
+# Define robot control functions
+def on_move_forward(trigger: str, utterance: str, similarity: float):
+    print(f"🤖 Moving forward with {similarity:.0%} confidence")
+    # Add your motor control code here
+    # GPIO.output(MOTOR_FORWARD_PIN, GPIO.HIGH)
+
+def on_move_backward(trigger: str, utterance: str, similarity: float):
+    print(f"🤖 Moving backward with {similarity:.0%} confidence")
+    # Add your motor control code here
+
+def on_turn_left(trigger: str, utterance: str, similarity: float):
+    print(f"🤖 Turning left with {similarity:.0%} confidence")
+    # Add your motor control code here
+
+def on_turn_right(trigger: str, utterance: str, similarity: float):
+    print(f"🤖 Turning right with {similarity:.0%} confidence")
+    # Add your motor control code here
+
+def on_stop(trigger: str, utterance: str, similarity: float):
+    print(f"🛑 Stopping with {similarity:.0%} confidence")
+    # Add your motor control code here
+
+# Register intents
+intent_recognizer.register_intent("move forward", on_move_forward)
+intent_recognizer.register_intent("move backward", on_move_backward)
+intent_recognizer.register_intent("turn left", on_turn_left)
+intent_recognizer.register_intent("turn right", on_turn_right)
+intent_recognizer.register_intent("stop", on_stop)
+
+print("🎤 Voice-controlled robot ready!")
+print("Try commands like: 'go forward', 'turn right', 'stop'")
+
+# Create mic transcriber
+mic_transcriber = MicTranscriber(model_path=model_path, model_arch=model_arch)
+mic_transcriber.add_listener(intent_recognizer)
+mic_transcriber.start()
+
+try:
+    while True:
+        time.sleep(0.1)
+except KeyboardInterrupt:
+    print("\n\nStopping robot...")
+finally:
+    intent_recognizer.close()
+    mic_transcriber.stop()
+    mic_transcriber.close()
+```
+
+## GPIO Integration
+
+Control GPIO pins based on voice commands:
+
+```python
+import RPi.GPIO as GPIO
+from moonshine_voice import IntentRecognizer
+
+# Setup GPIO
+GPIO.setmode(GPIO.BCM)
+LED_PIN = 18
+GPIO.setup(LED_PIN, GPIO.OUT)
+
+def on_lights_on(trigger: str, utterance: str, similarity: float):
+    print("💡 Turning LED on")
+    GPIO.output(LED_PIN, GPIO.HIGH)
+
+def on_lights_off(trigger: str, utterance: str, similarity: float):
+    print("💡 Turning LED off")
+    GPIO.output(LED_PIN, GPIO.LOW)
+
+# Register intents
+intent_recognizer.register_intent("turn on the lights", on_lights_on)
+intent_recognizer.register_intent("turn off the lights", on_lights_off)
+
+# ... rest of setup code ...
+
+try:
+    # Main loop
+    pass
+finally:
+    GPIO.cleanup()
+```
+
+## Audio Configuration
+
+### List Audio Devices
+
+Find your USB microphone:
+
+```bash
+arecord -l
+```
+
+Output will show:
+```
+card 1: Device [USB Audio Device], device 0: USB Audio [USB Audio]
+  Subdevices: 1/1
+```
+
+### Set Default Microphone
+
+If the wrong device is selected, create `~/.asoundrc`:
+
+```bash
+nano ~/.asoundrc
+```
+
+Add:
+```
+pcm.!default {
+    type hw
+    card 1  # Change to your card number
+}
+
+ctl.!default {
+    type hw
+    card 1
+}
+```
+
+### Test Microphone
+
+Record and play back a test:
+
+```bash
+# Record 5 seconds
+arecord -f cd -d 5 test.wav
+
+# Play back
+aplay test.wav
+```
+
+## Performance Optimization
+
+### Model Selection for Raspberry Pi
+
+| Model | Pi 5 Latency | Pi 4 Latency | Recommended For |
+|-------|--------------|--------------|------------------|
+| Tiny | 237ms | 450ms | Basic commands |
+| Tiny Streaming | 210ms | 380ms | **Best for Pi** |
+| Base | 350ms | 680ms | Higher accuracy |
+| Small Streaming | 527ms | 1100ms | Pi 5 only |
+
+<Note>
+**Tiny Streaming** offers the best balance of accuracy and performance for Raspberry Pi projects.
+</Note>
+
+### Download Specific Model
+
+```bash
+# Download Tiny Streaming model
+python -m moonshine_voice.download --language en --model-arch 2
+```
+
+### Reduce Memory Usage
+
+If running into memory issues:
+
+```python
+# Use smaller update interval to reduce buffering
+mic_transcriber = MicTranscriber(
+    model_path=model_path,
+    model_arch=model_arch,
+    update_interval=1.0  # Update every 1 second instead of 0.5s
+)
+```
+
+## Headless Operation
+
+### Run on Boot
+
+Create a systemd service:
+
+```bash
+sudo nano /etc/systemd/system/moonshine-robot.service
+```
+
+Add:
+```ini
+[Unit]
+Description=Moonshine Voice Robot
+After=network.target sound.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/my-robot
+ExecStart=/usr/bin/python3 /home/pi/my-robot/robot.py
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Enable and start:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable moonshine-robot.service
+sudo systemctl start moonshine-robot.service
+
+# Check status
+sudo systemctl status moonshine-robot.service
+
+# View logs
+journalctl -u moonshine-robot.service -f
+```
+
+## Common Issues
+
+### No Microphone Detected
+
+```bash
+# Check USB devices
+lsusb
+
+# Check audio devices
+arecord -l
+
+# Test microphone
+arecord -f cd -d 3 test.wav && aplay test.wav
+```
+
+If not working:
+1. Try different USB port
+2. Check microphone is not muted
+3. Verify user is in audio group: `groups`
+4. Add user to audio group: `sudo usermod -a -G audio pi`
+
+### Out of Memory
+
+Pi 3/4 may run out of memory with larger models:
+
+1. Use Tiny or Tiny Streaming model
+2. Close other applications
+3. Increase swap size:
+   ```bash
+   sudo nano /etc/dphys-swapfile
+   # Set CONF_SWAPSIZE=2048
+   sudo systemctl restart dphys-swapfile
+   ```
+
+### Slow Performance
+
+1. Use streaming models (faster latency)
+2. Use Tiny or Tiny Streaming architecture
+3. Overclock Pi (if comfortable):
+   ```bash
+   sudo nano /boot/config.txt
+   # Add: over_voltage=6
+   # Add: arm_freq=2000
+   sudo reboot
+   ```
+
+### Python Package Conflicts
+
+If you get pip warnings, use virtual environment:
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+uv venv
+source .venv/bin/activate
+uv pip install moonshine-voice
+```
+
+## Video Tutorial
+
+Watch the Raspberry Pi setup screencast:
+
+<iframe 
+  width="100%" 
+  height="400" 
+  src="https://www.youtube.com/embed/NNcqx1wFxl0" 
+  title="Getting Started with Moonshine Voice on Raspberry Pi"
+  frameborder="0" 
+  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+  allowfullscreen
+></iframe>
+
+## Real-World Projects
+
+### Voice-Controlled Car
+
+```python
+import RPi.GPIO as GPIO
+from moonshine_voice import MicTranscriber, IntentRecognizer, get_model_for_language, get_embedding_model
+
+# Motor control pins
+MOTOR_LEFT_FORWARD = 17
+MOTOR_LEFT_BACKWARD = 18
+MOTOR_RIGHT_FORWARD = 27
+MOTOR_RIGHT_BACKWARD = 22
+
+# Setup GPIO
+GPIO.setmode(GPIO.BCM)
+for pin in [MOTOR_LEFT_FORWARD, MOTOR_LEFT_BACKWARD, MOTOR_RIGHT_FORWARD, MOTOR_RIGHT_BACKWARD]:
+    GPIO.setup(pin, GPIO.OUT)
+    GPIO.output(pin, GPIO.LOW)
+
+def forward():
+    GPIO.output(MOTOR_LEFT_FORWARD, GPIO.HIGH)
+    GPIO.output(MOTOR_RIGHT_FORWARD, GPIO.HIGH)
+
+def backward():
+    GPIO.output(MOTOR_LEFT_BACKWARD, GPIO.HIGH)
+    GPIO.output(MOTOR_RIGHT_BACKWARD, GPIO.HIGH)
+
+def left():
+    GPIO.output(MOTOR_LEFT_BACKWARD, GPIO.HIGH)
+    GPIO.output(MOTOR_RIGHT_FORWARD, GPIO.HIGH)
+
+def right():
+    GPIO.output(MOTOR_LEFT_FORWARD, GPIO.HIGH)
+    GPIO.output(MOTOR_RIGHT_BACKWARD, GPIO.HIGH)
+
+def stop():
+    for pin in [MOTOR_LEFT_FORWARD, MOTOR_LEFT_BACKWARD, MOTOR_RIGHT_FORWARD, MOTOR_RIGHT_BACKWARD]:
+        GPIO.output(pin, GPIO.LOW)
+
+# Setup voice control (see IntentRecognizer example above)
+# ...
+```
+
+### Smart Home Controller
+
+Control home automation with voice:
+
+```python
+import requests
+from moonshine_voice import IntentRecognizer
+
+def on_lights_on(trigger, utterance, similarity):
+    requests.post("http://homeassistant.local/api/services/light/turn_on", 
+                  json={"entity_id": "light.living_room"})
+
+def on_temperature(trigger, utterance, similarity):
+    temp = requests.get("http://homeassistant.local/api/states/sensor.temperature").json()
+    print(f"Current temperature: {temp['state']}°C")
+
+intent_recognizer.register_intent("turn on the lights", on_lights_on)
+intent_recognizer.register_intent("what's the temperature", on_temperature)
+```
+
+## Resources
+
+- **Video Tutorial**: [YouTube: Getting Started on Raspberry Pi](https://www.youtube.com/watch?v=NNcqx1wFxl0)
+- **Example Code**: [raspberry-pi-examples.tar.gz](https://github.com/moonshine-ai/moonshine/releases/latest/download/raspberry-pi-examples.tar.gz)
+- **My Dalek Example**: [Full code in examples/raspberry-pi/my-dalek/](https://github.com/moonshine-ai/moonshine/tree/main/examples/raspberry-pi/my-dalek)
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Python API" icon="python" href="/platforms/python">
+    Complete Python API reference
+  </Card>
+  <Card title="Intent Recognition" icon="brain" href="/features/intent-recognition">
+    Advanced command recognition
+  </Card>
+  <Card title="GPIO Projects" icon="microchip" href="/examples/gpio">
+    More Raspberry Pi projects
+  </Card>
+  <Card title="Models" icon="download" href="/models">
+    Model architectures and performance
+  </Card>
+</CardGroup>

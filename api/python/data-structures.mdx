@@ -1,0 +1,296 @@
+---
+title: Data Structures
+description: Core data structures for transcription and intent recognition
+---
+
+Moonshine Voice uses several data structures to represent transcription results, intent matches, and model configuration.
+
+## TranscriptLine
+
+Represents a single segment of speech (roughly equivalent to a phrase or sentence).
+
+```python
+from moonshine_voice import TranscriptLine
+```
+
+### Fields
+
+<ResponseField name="text" type="str">
+  UTF-8 encoded transcription text
+</ResponseField>
+
+<ResponseField name="start_time" type="float">
+  Time offset in seconds from session start when speech began
+</ResponseField>
+
+<ResponseField name="duration" type="float">
+  Duration of the speech segment in seconds
+</ResponseField>
+
+<ResponseField name="line_id" type="int">
+  Unique 64-bit identifier for this line (stable across updates)
+</ResponseField>
+
+<ResponseField name="is_complete" type="bool">
+  `True` when the segment is finalized, `False` while still being spoken
+</ResponseField>
+
+<ResponseField name="is_updated" type="bool">
+  `True` if any field changed since the last transcript update
+</ResponseField>
+
+<ResponseField name="is_new" type="bool">
+  `True` if this line was just added in the latest update
+</ResponseField>
+
+<ResponseField name="has_text_changed" type="bool">
+  `True` if the text field specifically changed (subset of `is_updated`)
+</ResponseField>
+
+<ResponseField name="has_speaker_id" type="bool">
+  `True` if speaker identification has completed for this line
+</ResponseField>
+
+<ResponseField name="speaker_id" type="int">
+  Unique 64-bit identifier for the speaker (stable across sessions for same voice)
+</ResponseField>
+
+<ResponseField name="speaker_index" type="int">
+  Sequential speaker number (0, 1, 2...) in order of first appearance
+</ResponseField>
+
+<ResponseField name="audio_data" type="List[float]">
+  Raw 16kHz mono PCM audio data for this segment as floats (-1.0 to 1.0). `None` if `return_audio_data` option is disabled.
+</ResponseField>
+
+### Example
+
+```python
+for line in transcript.lines:
+    print(f"[{line.start_time:.2f}s] {line.text}")
+    if line.has_speaker_id:
+        print(f"  Speaker: {line.speaker_index}")
+    print(f"  Duration: {line.duration:.2f}s")
+    print(f"  Complete: {line.is_complete}")
+```
+
+## Transcript
+
+Container for a list of `TranscriptLine` objects, representing a complete transcription session.
+
+```python
+from moonshine_voice import Transcript
+```
+
+### Fields
+
+<ResponseField name="lines" type="List[TranscriptLine]">
+  List of transcript lines in chronological order
+</ResponseField>
+
+### Methods
+
+```python
+# Get full text
+full_text = " ".join(line.text for line in transcript.lines)
+
+# Filter completed lines only
+completed = [line for line in transcript.lines if line.is_complete]
+
+# Get lines from specific speaker
+speaker_0_lines = [
+    line for line in transcript.lines 
+    if line.has_speaker_id and line.speaker_index == 0
+]
+```
+
+### Example
+
+```python
+transcript = transcriber.update_transcription()
+
+print(f"Total lines: {len(transcript.lines)}")
+for i, line in enumerate(transcript.lines):
+    status = "[FINAL]" if line.is_complete else "[ACTIVE]"
+    print(f"{i+1}. {status} {line.text}")
+```
+
+## IntentMatch
+
+Represents a matched voice command.
+
+```python
+from moonshine_voice import IntentMatch
+```
+
+### Fields
+
+<ResponseField name="trigger_phrase" type="str">
+  The registered command phrase that was matched
+</ResponseField>
+
+<ResponseField name="utterance" type="str">
+  The actual user's words that triggered the match
+</ResponseField>
+
+<ResponseField name="similarity" type="float">
+  Confidence score between 0.0 and 1.0 indicating how well the utterance matches the intent
+</ResponseField>
+
+### Example
+
+```python
+def on_intent(trigger, utterance, similarity):
+    match = IntentMatch(
+        trigger_phrase=trigger,
+        utterance=utterance,
+        similarity=similarity
+    )
+    print(f"Matched '{match.trigger_phrase}'")
+    print(f"User said: '{match.utterance}'")
+    print(f"Confidence: {match.similarity:.0%}")
+```
+
+## ModelArch
+
+Enum for ASR model architectures.
+
+```python
+from moonshine_voice import ModelArch
+```
+
+### Values
+
+<ResponseField name="TINY" type="int" value="0">
+  26M parameters, smallest model, fastest inference
+</ResponseField>
+
+<ResponseField name="BASE" type="int" value="1">
+  58M parameters, balanced accuracy/speed
+</ResponseField>
+
+<ResponseField name="TINY_STREAMING" type="int" value="2">
+  34M parameters, supports streaming with caching
+</ResponseField>
+
+<ResponseField name="SMALL_STREAMING" type="int" value="4">
+  123M parameters, high accuracy streaming
+</ResponseField>
+
+<ResponseField name="MEDIUM_STREAMING" type="int" value="5">
+  245M parameters, highest accuracy (better than Whisper Large V3)
+</ResponseField>
+
+### Example
+
+```python
+from moonshine_voice import Transcriber, ModelArch
+
+# Use the tiny model for fastest processing
+transcriber = Transcriber(
+    model_path="/path/to/tiny/models",
+    model_arch=ModelArch.TINY
+)
+
+# Use streaming model for live audio
+streaming_transcriber = Transcriber(
+    model_path="/path/to/streaming/models",
+    model_arch=ModelArch.SMALL_STREAMING
+)
+```
+
+## EmbeddingModelArch
+
+Enum for embedding model architectures used in intent recognition.
+
+```python
+from moonshine_voice import EmbeddingModelArch
+```
+
+### Values
+
+<ResponseField name="GEMMA_300M" type="int" value="0">
+  Gemma-based 300M parameter sentence embedding model
+</ResponseField>
+
+### Example
+
+```python
+from moonshine_voice import IntentRecognizer, EmbeddingModelArch
+
+recognizer = IntentRecognizer(
+    model_path="/path/to/embedding/models",
+    model_arch=EmbeddingModelArch.GEMMA_300M,
+    model_variant="q4"
+)
+```
+
+## Helper Functions
+
+### load_wav_file
+
+Load a WAV file into audio data and sample rate.
+
+```python
+from moonshine_voice import load_wav_file
+
+audio_data, sample_rate = load_wav_file("speech.wav")
+```
+
+<ParamField path="filepath" type="str" required>
+  Path to WAV file
+</ParamField>
+
+**Returns:** Tuple of `(audio_data: List[float], sample_rate: int)`
+
+### get_model_for_language
+
+Download and get path to ASR model for a language.
+
+```python
+from moonshine_voice import get_model_for_language
+
+model_path, model_arch = get_model_for_language(
+    language: str,
+    model_arch: int = None
+)
+```
+
+<ParamField path="language" type="str" required>
+  Language code: "en", "es", "ar", "ja", "ko", "zh", "uk", "vi"
+</ParamField>
+
+<ParamField path="model_arch" type="int" default="None">
+  Specific model architecture (0-5). If None, uses highest quality available.
+</ParamField>
+
+**Returns:** Tuple of `(model_path: str, model_arch: int)`
+
+### get_embedding_model
+
+Download and get path to embedding model for intent recognition.
+
+```python
+from moonshine_voice import get_embedding_model
+
+model_path, model_arch = get_embedding_model(
+    model_name: str = "gemma-300m",
+    variant: str = "q4"
+)
+```
+
+<ParamField path="model_name" type="str" default="gemma-300m">
+  Embedding model name. Currently only "gemma-300m" is supported.
+</ParamField>
+
+<ParamField path="variant" type="str" default="q4">
+  Model quantization: "fp32", "fp16", "q8", "q4", "q4f16"
+</ParamField>
+
+**Returns:** Tuple of `(model_path: str, model_arch: int)`
+
+## See Also
+
+- [Transcriber API](/api/python/transcriber) - Using these structures
+- [Events API](/api/python/events) - Event types containing these structures
+- [Transcription Guide](/guides/transcription) - Working with transcripts

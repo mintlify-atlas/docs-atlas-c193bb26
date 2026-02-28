@@ -1,0 +1,454 @@
+---
+title: 'Command Recognition'
+description: 'Build voice command interfaces with semantic intent matching'
+---
+
+The `IntentRecognizer` enables natural language command recognition using semantic similarity. Unlike traditional voice assistants that require exact phrase matching, Moonshine's intent recognition understands variations and natural speech patterns.
+
+## How It Works
+
+Intent recognition matches user speech against registered command phrases using semantic embeddings:
+
+- Register trigger phrases like "Turn on the lights"
+- Users can say variations like "Switch on the lights", "Lights on please", or "Let there be light"
+- Callbacks are triggered when similarity exceeds a threshold
+
+## Quick Start
+
+<Steps>
+  <Step title="Run the built-in example">
+    ```bash
+    python -m moonshine_voice.intent_recognizer
+    ```
+
+    This starts listening for pre-configured commands. Try saying:
+    - "Turn on the lights"
+    - "Switch on the lights" 
+    - "Let there be light"
+  </Step>
+
+  <Step title="Try custom commands">
+    ```bash
+    python -m moonshine_voice.intent_recognizer \
+      --intents "Turn left, Turn right, Go forward, Go backward"
+    ```
+  </Step>
+</Steps>
+
+## Basic Usage
+
+```python
+from moonshine_voice import (
+    IntentRecognizer,
+    MicTranscriber,
+    get_model_for_language,
+    get_embedding_model
+)
+
+# Load transcription model
+model_path, model_arch = get_model_for_language("en")
+
+# Load embedding model for intent matching
+embedding_path, embedding_arch = get_embedding_model(
+    "embeddinggemma-300m",
+    variant="q4"  # Options: q4, q8, fp16, fp32, q4f16
+)
+
+# Create intent recognizer
+intent_recognizer = IntentRecognizer(
+    model_path=embedding_path,
+    model_arch=embedding_arch,
+    model_variant="q4",
+    threshold=0.7  # Similarity threshold (0.0 - 1.0)
+)
+
+# Define intent handler
+def on_lights_on(trigger: str, utterance: str, similarity: float):
+    print(f"Turning lights on! (confidence: {similarity:.0%})")
+
+# Register intents
+intent_recognizer.register_intent("turn on the lights", on_lights_on)
+
+# Create microphone transcriber
+mic_transcriber = MicTranscriber(
+    model_path=model_path,
+    model_arch=model_arch
+)
+
+# Connect intent recognizer as a listener
+mic_transcriber.add_listener(intent_recognizer)
+
+# Start listening
+mic_transcriber.start()
+
+try:
+    import time
+    while True:
+        time.sleep(0.1)
+finally:
+    mic_transcriber.stop()
+    mic_transcriber.close()
+    intent_recognizer.close()
+```
+
+## Registering Intents
+
+### Basic Registration
+
+```python
+def on_intent(trigger: str, utterance: str, similarity: float):
+    print(f"Intent '{trigger}' triggered")
+    print(f"User said: '{utterance}'")
+    print(f"Confidence: {similarity:.0%}")
+
+intent_recognizer.register_intent("turn on the lights", on_intent)
+```
+
+### Multiple Intents
+
+```python
+intents = [
+    "turn on the lights",
+    "turn off the lights",
+    "what is the weather",
+    "set a timer",
+    "play some music",
+    "stop the music"
+]
+
+for intent in intents:
+    intent_recognizer.register_intent(intent, on_intent)
+```
+
+### Intent-Specific Handlers
+
+```python
+def handle_lights_on(trigger, utterance, similarity):
+    print("💡 Lights ON")
+    # Control smart lights here
+
+def handle_lights_off(trigger, utterance, similarity):
+    print("🌙 Lights OFF")
+    # Control smart lights here
+
+def handle_weather(trigger, utterance, similarity):
+    print("☀️ Checking weather...")
+    # Call weather API here
+
+intent_recognizer.register_intent("turn on the lights", handle_lights_on)
+intent_recognizer.register_intent("turn off the lights", handle_lights_off)
+intent_recognizer.register_intent("what is the weather", handle_weather)
+```
+
+## Processing Utterances
+
+### Standalone Processing
+
+Process utterances directly without a transcriber:
+
+```python
+intent_recognizer = IntentRecognizer(
+    model_path=embedding_path,
+    model_arch=embedding_arch,
+    threshold=0.7
+)
+
+def on_command(trigger, utterance, similarity):
+    print(f"Command: {trigger}")
+
+intent_recognizer.register_intent("turn on the lights", on_command)
+
+# Process a single utterance
+recognized = intent_recognizer.process_utterance("Switch on the lights")
+if recognized:
+    print("Intent was recognized!")
+else:
+    print("No matching intent found")
+```
+
+### As a TranscriptEventListener
+
+The `IntentRecognizer` implements `TranscriptEventListener`, so it automatically processes completed transcript lines:
+
+```python
+# Intent recognizer automatically processes on_line_completed events
+mic_transcriber.add_listener(intent_recognizer)
+
+# When speech is completed, intents are automatically checked
+mic_transcriber.start()
+```
+
+<Note>
+  The intent recognizer only processes completed lines (after speech pauses), not intermediate updates.
+</Note>
+
+## Threshold Configuration
+
+The threshold controls how similar an utterance must be to trigger an intent:
+
+```python
+# Strict matching (fewer false positives)
+intent_recognizer = IntentRecognizer(
+    model_path=embedding_path,
+    model_arch=embedding_arch,
+    threshold=0.8  # High threshold
+)
+
+# Relaxed matching (more variations accepted)
+intent_recognizer = IntentRecognizer(
+    model_path=embedding_path,
+    model_arch=embedding_arch,
+    threshold=0.5  # Low threshold
+)
+
+# Change threshold dynamically
+intent_recognizer.threshold = 0.7
+print(f"Current threshold: {intent_recognizer.threshold}")
+```
+
+<Tip>
+  Start with a threshold of 0.6-0.7 and adjust based on your use case. Higher values reduce false positives but may miss valid variations.
+</Tip>
+
+## Managing Intents
+
+### Unregister Intents
+
+```python
+# Remove a specific intent
+was_removed = intent_recognizer.unregister_intent("turn on the lights")
+if was_removed:
+    print("Intent removed")
+```
+
+### Clear All Intents
+
+```python
+# Remove all registered intents
+intent_recognizer.clear_intents()
+print(f"Intent count: {intent_recognizer.intent_count}")
+```
+
+### Check Intent Count
+
+```python
+count = intent_recognizer.intent_count
+print(f"Registered intents: {count}")
+```
+
+## Advanced: General Intent Callback
+
+Set a callback that fires for any recognized intent:
+
+```python
+from moonshine_voice.intent_recognizer import IntentMatch
+
+def on_any_intent(match: IntentMatch):
+    print(f"Intent: {match.trigger_phrase}")
+    print(f"Said: {match.utterance}")
+    print(f"Similarity: {match.similarity:.2f}")
+    
+    # Route to appropriate handler
+    if "lights" in match.trigger_phrase:
+        handle_lights(match)
+    elif "weather" in match.trigger_phrase:
+        handle_weather(match)
+
+intent_recognizer.set_on_intent(on_any_intent)
+```
+
+<Note>
+  Both the per-intent handler and general callback will be invoked if both are set.
+</Note>
+
+## Embedding Models
+
+### Available Models
+
+Currently supported: `embeddinggemma-300m` (768-dimensional embeddings)
+
+### Model Variants
+
+- **`q4`** - Quantized 4-bit (fastest, smallest, default)
+- **`q8`** - Quantized 8-bit (balanced)
+- **`fp16`** - 16-bit floating point
+- **`fp32`** - 32-bit floating point (highest quality, largest)
+- **`q4f16`** - Mixed precision
+
+```python
+# Download specific variant
+embedding_path, embedding_arch = get_embedding_model(
+    "embeddinggemma-300m",
+    variant="q8"  # Use 8-bit quantization
+)
+```
+
+## Complete Example: Robot Control
+
+```python
+from moonshine_voice import (
+    IntentRecognizer,
+    MicTranscriber,
+    TranscriptEventListener,
+    get_model_for_language,
+    get_embedding_model
+)
+import time
+
+class RobotController:
+    def move_forward(self, trigger, utterance, similarity):
+        print(f"🤖 Moving forward (confidence: {similarity:.0%})")
+        # Send command to robot
+    
+    def move_backward(self, trigger, utterance, similarity):
+        print(f"🤖 Moving backward (confidence: {similarity:.0%})")
+    
+    def turn_left(self, trigger, utterance, similarity):
+        print(f"🤖 Turning left (confidence: {similarity:.0%})")
+    
+    def turn_right(self, trigger, utterance, similarity):
+        print(f"🤖 Turning right (confidence: {similarity:.0%})")
+    
+    def stop(self, trigger, utterance, similarity):
+        print(f"🤖 Stopping (confidence: {similarity:.0%})")
+
+class TranscriptDisplay(TranscriptEventListener):
+    def on_line_text_changed(self, event):
+        print(f"\r📝 {event.line.text}", end="", flush=True)
+    
+    def on_line_completed(self, event):
+        print(f"\r📝 {event.line.text}")
+
+def main():
+    # Load models
+    print("Loading models...")
+    model_path, model_arch = get_model_for_language("en")
+    embedding_path, embedding_arch = get_embedding_model(
+        "embeddinggemma-300m",
+        variant="q4"
+    )
+    
+    # Create intent recognizer
+    intent_recognizer = IntentRecognizer(
+        model_path=embedding_path,
+        model_arch=embedding_arch,
+        model_variant="q4",
+        threshold=0.6
+    )
+    
+    # Register robot commands
+    robot = RobotController()
+    intent_recognizer.register_intent("move forward", robot.move_forward)
+    intent_recognizer.register_intent("move backward", robot.move_backward)
+    intent_recognizer.register_intent("turn left", robot.turn_left)
+    intent_recognizer.register_intent("turn right", robot.turn_right)
+    intent_recognizer.register_intent("stop", robot.stop)
+    
+    print(f"Registered {intent_recognizer.intent_count} commands")
+    
+    # Create microphone transcriber
+    mic_transcriber = MicTranscriber(
+        model_path=model_path,
+        model_arch=model_arch
+    )
+    
+    # Add listeners
+    mic_transcriber.add_listener(TranscriptDisplay())
+    mic_transcriber.add_listener(intent_recognizer)
+    
+    print("\n🎤 Robot voice control active")
+    print("Try: 'go forward', 'back up', 'left turn', 'right', 'halt'")
+    print("Press Ctrl+C to exit\n")
+    
+    mic_transcriber.start()
+    
+    try:
+        while True:
+            time.sleep(0.1)
+    except KeyboardInterrupt:
+        print("\nShutting down...")
+    finally:
+        mic_transcriber.stop()
+        mic_transcriber.close()
+        intent_recognizer.close()
+
+if __name__ == "__main__":
+    main()
+```
+
+## Command Line Options
+
+```bash
+# Basic usage
+python -m moonshine_voice.intent_recognizer
+
+# Custom intents
+python -m moonshine_voice.intent_recognizer \
+  --intents "start recording, stop recording, save file, delete file"
+
+# Adjust threshold
+python -m moonshine_voice.intent_recognizer \
+  --threshold 0.8 \
+  --intents "turn on lights, turn off lights"
+
+# Use specific model variant
+python -m moonshine_voice.intent_recognizer \
+  --quantization q8 \
+  --intents "play music, pause music, next track"
+
+# Process WAV file instead of microphone
+python -m moonshine_voice.intent_recognizer \
+  --wav-file recording.wav \
+  --intents "yes, no, cancel"
+
+# Use different language
+python -m moonshine_voice.intent_recognizer \
+  --language es \
+  --intents "encender luz, apagar luz"
+```
+
+## Best Practices
+
+<Tip>
+  **Choose clear, distinct trigger phrases**
+  
+  Good: "turn on the lights", "turn off the lights"
+  
+  Avoid: "turn on", "turn off" (too similar)
+</Tip>
+
+<Tip>
+  **Test with natural variations**
+  
+  Users will phrase commands differently. Test with:
+  - Formal: "Please turn on the lights"
+  - Casual: "Lights on"
+  - Creative: "Let there be light"
+</Tip>
+
+<Warning>
+  Current intent recognition is designed for full-sentence matching. Slot filling (extracting parameters like "set timer for 5 minutes") will be added in future releases.
+</Warning>
+
+## Debugging Intent Matching
+
+Log all intent matches to understand what's being triggered:
+
+```python
+def debug_handler(trigger, utterance, similarity):
+    print(f"\n{'='*50}")
+    print(f"MATCH FOUND")
+    print(f"Trigger: {trigger}")
+    print(f"Utterance: {utterance}")
+    print(f"Similarity: {similarity:.3f}")
+    print(f"{'='*50}\n")
+
+for intent in intents:
+    intent_recognizer.register_intent(intent, debug_handler)
+```
+
+## See Also
+
+- [Microphone Transcription](/guides/mic-transcription) - Capture live audio
+- [Transcription Guide](/guides/transcription) - Core transcription concepts
+- [Streaming Guide](/guides/streaming) - Real-time processing patterns

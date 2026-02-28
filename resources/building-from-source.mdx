@@ -1,0 +1,349 @@
+---
+title: Building from Source
+description: Build Moonshine Voice from source for customization and debugging
+---
+
+Building Moonshine Voice from source allows you to debug library internals, add instrumentation, or create custom builds for your platform.
+
+## Prerequisites
+
+- C++ compiler with C++17 support (GCC, Clang, or MSVC)
+- CMake 3.15 or higher
+- Git
+- Python 3.8+ (for language bindings)
+
+## Getting the Source Code
+
+Clone the repository:
+
+```bash
+git clone https://github.com/moonshine-ai/moonshine.git
+cd moonshine
+```
+
+## Building the Core Library
+
+The core engine is written in C++ with a C interface for easy integration with other languages.
+
+### Using CMake
+
+```bash
+cd core
+mkdir -p build
+cd build
+cmake ..
+cmake --build .
+```
+
+After building, you'll have executable unit tests in the `build` directory.
+
+### Running Tests
+
+All tests expect to be run from the `test-assets` folder. Use the provided scripts:
+
+**Linux/macOS**:
+```bash
+./scripts/run-core-tests.sh
+```
+
+**Windows**:
+```batch
+.\scripts\run-core-tests.bat
+```
+
+All tests should compile and run without errors.
+
+### Build Configuration
+
+You can customize the build with CMake options:
+
+```bash
+# Debug build
+cmake -DCMAKE_BUILD_TYPE=Debug ..
+
+# Release build with optimizations
+cmake -DCMAKE_BUILD_TYPE=Release ..
+
+# Specify compiler
+cmake -DCMAKE_CXX_COMPILER=clang++ ..
+```
+
+## Building Language Bindings
+
+Moonshine Voice provides native bindings for multiple languages built on top of the C interface.
+
+### Python
+
+The Python package includes:
+- C extension module wrapping the core library
+- High-level Python API
+- Helper utilities for audio processing
+
+**Location**: `python/`
+
+Build and install locally:
+
+```bash
+cd python
+pip install -e .
+```
+
+For development with editable install:
+
+```bash
+pip install -e ".[dev]"
+```
+
+### Swift (iOS/macOS)
+
+Swift bindings use Swift Package Manager.
+
+**Location**: `swift/`
+
+The Swift package includes:
+- Native Swift API wrapping the C interface
+- Platform-specific optimizations for Apple Silicon
+- Integration with Apple's audio frameworks
+
+**Repository**: [github.com/moonshine-ai/moonshine-swift](https://github.com/moonshine-ai/moonshine-swift)
+
+To build locally:
+
+```bash
+cd swift
+swift build
+```
+
+### Android (Java/Kotlin)
+
+Android bindings are built with Gradle and published to Maven.
+
+**Location**: `android/`
+
+Build the Android library:
+
+```bash
+cd android
+./gradlew build
+```
+
+This creates an AAR (Android Archive) file you can use in your projects.
+
+### C++ Header-Only API
+
+The C++ API is a header-only library providing a higher-level interface than the C API.
+
+**Location**: `core/moonshine-cpp.h`
+
+No separate build is required - just include the header in your project:
+
+```cpp
+#include "moonshine-cpp.h"
+```
+
+## Building All Platforms
+
+The release build script builds artifacts for all supported platforms:
+
+```bash
+./scripts/build-all-platforms.sh
+```
+
+This script:
+- Builds the core library for each platform
+- Creates language bindings for Python, Swift, and Android
+- Packages artifacts for distribution
+- Generates checksums and metadata
+
+Use this as a reference for building specific platforms.
+
+## Platform-Specific Notes
+
+### Linux
+
+```bash
+cd core
+mkdir build
+cd build
+cmake ..
+cmake --build .
+```
+
+The build produces:
+- `libmoonshine.a` - Static library
+- `libmoonshine.so` - Shared library (if enabled)
+- Test executables
+
+### macOS
+
+```bash
+cd core
+mkdir build
+cd build
+cmake ..
+cmake --build .
+```
+
+You may need to link against system frameworks:
+- CoreFoundation
+- Foundation
+
+### Windows
+
+Use Visual Studio or the Visual Studio Build Tools:
+
+```batch
+cd core
+mkdir build
+cd build
+cmake -G "Visual Studio 17 2022" -A x64 ..
+cmake --build . --config Release
+```
+
+Or use the batch script:
+
+```batch
+.\scripts\run-core-tests.bat
+```
+
+### Android
+
+Use Android NDK for cross-compilation:
+
+```bash
+cd android
+./gradlew assembleRelease
+```
+
+Requires:
+- Android SDK
+- Android NDK r21 or higher
+- Gradle 7.0+
+
+### iOS
+
+Build using Xcode or Swift Package Manager:
+
+```bash
+cd swift
+swift build
+```
+
+For device builds, use Xcode and sign with your development certificate.
+
+## Dependencies
+
+### ONNX Runtime
+
+The only major external dependency is [ONNX Runtime](https://github.com/microsoft/onnxruntime).
+
+**Pre-built libraries** are included in `core/third-party/onnxruntime/lib/` for:
+- Linux (x86_64, ARM)
+- macOS (x86_64, ARM64)
+- Windows (x64)
+- iOS (ARM64)
+- Android (ARM, ARM64, x86, x86_64)
+
+If you need ONNX Runtime for a different platform:
+
+1. Download or build ONNX Runtime for your platform
+2. Place the library files in `core/third-party/onnxruntime/lib/<platform>/`
+3. Update CMake to link against your custom build
+
+### Other Dependencies
+
+The core library has minimal dependencies:
+- Standard C++17 library
+- ONNX Runtime
+- Platform-specific system libraries (CoreFoundation on macOS, etc.)
+
+## Porting to New Platforms
+
+To port Moonshine Voice to a new platform:
+
+1. **Build the Core Library**: Start with the CMake build. You'll need:
+   - C++17 compiler
+   - ONNX Runtime for your platform
+
+2. **Link Against the C API**: Use the C interface in `core/moonshine-c-api.h`:
+   - All functions have C linkage
+   - Most languages can call C functions
+   - Reference other language bindings as examples
+
+3. **Create Language Bindings** (optional):
+   - Wrap the C API in your target language
+   - Provide idiomatic interfaces
+   - Handle memory management and callbacks
+
+4. **Test**: Run the core tests and create platform-specific tests
+
+## Debugging
+
+### Debug Builds
+
+Build with debug symbols:
+
+```bash
+cmake -DCMAKE_BUILD_TYPE=Debug ..
+cmake --build .
+```
+
+### Enable Logging
+
+Set transcriber options to enable verbose logging:
+
+```python
+transcriber = Transcriber(
+    model_path=model_path,
+    model_arch=model_arch,
+    options={
+        "log_api_calls": "true",
+        "log_ort_runs": "true",
+        "log_output_text": "true",
+    }
+)
+```
+
+### GDB/LLDB Debugging
+
+Debug the C++ core:
+
+```bash
+# GDB (Linux)
+gdb ./test_executable
+
+# LLDB (macOS)
+lldb ./test_executable
+```
+
+### Save Audio Input
+
+Debug audio processing by saving input:
+
+```python
+transcriber = Transcriber(
+    model_path=model_path,
+    model_arch=model_arch,
+    options={"save_input_wav_path": "/tmp/debug"}
+)
+```
+
+This saves received audio to WAV files for inspection.
+
+## Contributing
+
+If you've made improvements or bug fixes:
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests if applicable
+5. Submit a pull request to [github.com/moonshine-ai/moonshine](https://github.com/moonshine-ai/moonshine)
+
+See the [Contributing Guide](/resources/contributing) for more details.
+
+## Next Steps
+
+- [Explore examples](/resources/examples) using the library
+- [Learn about the API](/api/transcriber)
+- [Join the community](/resources/support) for help

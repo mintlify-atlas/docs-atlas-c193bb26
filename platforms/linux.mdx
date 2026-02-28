@@ -1,0 +1,540 @@
+---
+title: 'Linux Platform Guide'
+description: 'Complete guide to building Moonshine Voice applications on Linux'
+icon: 'linux'
+---
+
+Moonshine Voice provides native C++ support for Linux with Python bindings, enabling voice applications across various Linux distributions and architectures.
+
+## Installation
+
+### Python Package (Recommended)
+
+<Steps>
+  <Step title="Install via pip">
+    The easiest way to use Moonshine Voice on Linux:
+    
+    ```bash
+    pip install moonshine-voice
+    ```
+    
+    This installs the Python package with pre-built native libraries.
+  </Step>
+  
+  <Step title="Download Models">
+    Download speech-to-text models:
+    
+    ```bash
+    python -m moonshine_voice.download --language en
+    ```
+    
+    Models are cached in `~/.cache/moonshine_voice/`
+  </Step>
+  
+  <Step title="Test Installation">
+    Test with microphone transcription:
+    
+    ```bash
+    python -m moonshine_voice.mic_transcriber --language en
+    ```
+  </Step>
+</Steps>
+
+### C++ Library
+
+<Steps>
+  <Step title="Install Dependencies">
+    Install required build tools:
+    
+    ```bash
+    # Ubuntu/Debian
+    sudo apt-get update
+    sudo apt-get install build-essential cmake git
+    
+    # Fedora/RHEL
+    sudo dnf install gcc-c++ cmake git
+    
+    # Arch Linux
+    sudo pacman -S base-devel cmake git
+    ```
+  </Step>
+  
+  <Step title="Clone Repository">
+    Get the Moonshine Voice source:
+    
+    ```bash
+    git clone https://github.com/moonshine-ai/moonshine.git
+    cd moonshine
+    ```
+  </Step>
+  
+  <Step title="Build with CMake">
+    Build the core library:
+    
+    ```bash
+    cd core
+    mkdir build
+    cd build
+    cmake ..
+    cmake --build .
+    ```
+    
+    This creates:
+    - `libmoonshine.so` - Shared library
+    - Test executables in `build/`
+  </Step>
+  
+  <Step title="Run Tests">
+    Verify the build:
+    
+    ```bash
+    cd ../test-assets
+    ../build/moonshine-cpp-test
+    ```
+  </Step>
+</Steps>
+
+## Quick Start Examples
+
+### Python Usage
+
+See the [Python Platform Guide](/platforms/python) for detailed Python usage.
+
+### C++ Transcription
+
+Minimal C++ example using the library:
+
+```cpp
+#include "moonshine-cpp.h"
+#include <iostream>
+#include <vector>
+
+int main(int argc, char** argv) {
+    // Parse arguments
+    std::string model_path = "path/to/base-en";
+    int model_arch = MOONSHINE_MODEL_ARCH_BASE;
+    std::string wav_path = "test.wav";
+    
+    // Create transcriber
+    moonshine::Transcriber transcriber(model_path, model_arch);
+    
+    // Load audio file
+    std::vector<float> audio_data;
+    int sample_rate;
+    if (!loadWavFile(wav_path, audio_data, sample_rate)) {
+        std::cerr << "Failed to load audio file" << std::endl;
+        return 1;
+    }
+    
+    // Transcribe
+    auto transcript = transcriber.transcribeWithoutStreaming(
+        audio_data.data(),
+        audio_data.size(),
+        sample_rate
+    );
+    
+    // Print results
+    for (const auto& line : transcript.lines) {
+        std::cout << "[" << line.startTime << "s - " 
+                  << (line.startTime + line.duration) << "s] "
+                  << line.text << std::endl;
+    }
+    
+    return 0;
+}
+```
+
+### Streaming C++ Example
+
+```cpp
+#include "moonshine-cpp.h"
+#include <iostream>
+
+class ConsoleListener : public moonshine::TranscriptEventListener {
+public:
+    void onLineStarted(const moonshine::TranscriptLine& line) override {
+        std::cout << "\n[Started] ";
+    }
+    
+    void onLineTextChanged(const moonshine::TranscriptLine& line) override {
+        std::cout << "\r" << line.text << std::flush;
+    }
+    
+    void onLineCompleted(const moonshine::TranscriptLine& line) override {
+        std::cout << "\r" << line.text << std::endl;
+    }
+};
+
+int main() {
+    moonshine::Transcriber transcriber("path/to/base-en", MOONSHINE_MODEL_ARCH_BASE);
+    
+    // Add listener
+    auto listener = std::make_shared<ConsoleListener>();
+    transcriber.addListener(listener);
+    
+    // Start streaming
+    transcriber.start();
+    
+    // Feed audio chunks
+    std::vector<float> audio_chunk;
+    int sample_rate = 16000;
+    
+    while (getNextAudioChunk(audio_chunk, sample_rate)) {
+        transcriber.addAudio(
+            audio_chunk.data(),
+            audio_chunk.size(),
+            sample_rate
+        );
+    }
+    
+    transcriber.stop();
+    return 0;
+}
+```
+
+## Building from Source
+
+### CMake Build Options
+
+```bash
+# Debug build
+cmake .. -DCMAKE_BUILD_TYPE=Debug
+
+# Release build (optimized)
+cmake .. -DCMAKE_BUILD_TYPE=Release
+
+# Install to system
+cmake --build . --target install
+
+# Specify install prefix
+cmake .. -DCMAKE_INSTALL_PREFIX=/usr/local
+```
+
+### Linking Against Moonshine
+
+In your `CMakeLists.txt`:
+
+```cmake
+cmake_minimum_required(VERSION 3.22.1)
+project(MyApp)
+
+set(CMAKE_CXX_STANDARD 20)
+
+# Find Moonshine library
+find_library(MOONSHINE_LIB moonshine HINTS /path/to/moonshine/core/build)
+
+# Add executable
+add_executable(my_app main.cpp)
+
+# Include directories
+target_include_directories(my_app PRIVATE
+    /path/to/moonshine/core
+)
+
+# Link libraries
+target_link_libraries(my_app PRIVATE
+    ${MOONSHINE_LIB}
+    pthread
+    dl
+)
+```
+
+Build:
+
+```bash
+mkdir build && cd build
+cmake ..
+make
+```
+
+### Compiler Support
+
+Moonshine requires C++20. Supported compilers:
+- GCC 10 or later
+- Clang 12 or later
+
+## Audio Setup
+
+### ALSA Configuration
+
+For microphone access with ALSA:
+
+```bash
+# Install ALSA development files
+sudo apt-get install libasound2-dev
+
+# List audio devices
+arecord -l
+
+# Test microphone
+arecord -f cd -d 5 test.wav
+aplay test.wav
+```
+
+### PulseAudio
+
+For PulseAudio systems:
+
+```bash
+# Install PulseAudio development files
+sudo apt-get install libpulse-dev
+
+# List sources
+pactl list sources short
+
+# Set default source
+pactl set-default-source alsa_input.pci-0000_00_1f.3.analog-stereo
+```
+
+### Python Audio (sounddevice)
+
+The Python package uses sounddevice, which works with ALSA/PulseAudio:
+
+```python
+import sounddevice as sd
+
+# List devices
+print(sd.query_devices())
+
+# Set default input device
+sd.default.device = 0  # Use device ID from list
+```
+
+## ARM/ARM64 Support
+
+Moonshine works on ARM-based Linux systems:
+
+```bash
+# Check architecture
+uname -m
+# x86_64, aarch64, armv7l, etc.
+
+# Build for current architecture
+cd core
+mkdir build && cd build
+cmake ..
+cmake --build .
+```
+
+### Raspberry Pi
+
+See the dedicated [Raspberry Pi guide](/platforms/raspberry-pi) for Pi-specific instructions.
+
+## Distribution-Specific Notes
+
+### Ubuntu/Debian
+
+```bash
+# Install all dependencies
+sudo apt-get update
+sudo apt-get install -y \
+    build-essential \
+    cmake \
+    git \
+    python3-pip \
+    python3-dev \
+    libasound2-dev \
+    libpulse-dev \
+    portaudio19-dev
+
+# Install Python package
+pip3 install moonshine-voice
+```
+
+### Fedora/RHEL
+
+```bash
+# Install dependencies
+sudo dnf install -y \
+    gcc-c++ \
+    cmake \
+    git \
+    python3-pip \
+    python3-devel \
+    alsa-lib-devel \
+    pulseaudio-libs-devel \
+    portaudio-devel
+
+# Install Python package
+pip3 install moonshine-voice
+```
+
+### Arch Linux
+
+```bash
+# Install dependencies
+sudo pacman -S \
+    base-devel \
+    cmake \
+    git \
+    python-pip \
+    alsa-lib \
+    libpulse \
+    portaudio
+
+# Install Python package
+pip install moonshine-voice
+```
+
+## Model Management
+
+### Download Location
+
+Models are cached in:
+```
+~/.cache/moonshine_voice/download.moonshine.ai/model/
+```
+
+Customize with environment variable:
+```bash
+export MOONSHINE_VOICE_CACHE=/path/to/cache
+python -m moonshine_voice.download --language en
+```
+
+### Available Models
+
+```bash
+# Download specific architecture
+python -m moonshine_voice.download --language en --model-arch 1
+
+# Architectures:
+# 0 = Tiny (26MB)
+# 1 = Base (58MB)
+# 2 = Tiny Streaming (34MB)
+# 3 = Small Streaming (123MB)
+# 4 = Medium Streaming (245MB)
+```
+
+## Performance
+
+### Benchmarking
+
+Test performance on your hardware:
+
+```bash
+cd core/build
+./benchmark --model-path /path/to/model --model-arch 1
+```
+
+Output includes:
+- Absolute processing time
+- Percentage of audio duration (compute load)
+- Average response latency
+
+### Performance Tips
+
+1. **Use streaming models** - Lower latency for real-time apps
+2. **Choose appropriate model** - Balance accuracy vs performance
+3. **Optimize build** - Use Release mode with CMake
+4. **Consider CPU** - Modern CPUs (AVX2) perform significantly better
+
+### Expected Performance
+
+| CPU | Model | Latency | Load |
+|-----|-------|---------|------|
+| Intel i7-10700 | Tiny Streaming | 69ms | 7% |
+| Intel i7-10700 | Base | 95ms | 10% |
+| Intel i7-10700 | Small Streaming | 165ms | 17% |
+| AMD Ryzen 5 5600X | Tiny Streaming | 52ms | 5% |
+| AMD Ryzen 5 5600X | Base | 78ms | 8% |
+
+## Troubleshooting
+
+### Library Not Found
+
+```bash
+# Add to LD_LIBRARY_PATH
+export LD_LIBRARY_PATH=/path/to/moonshine/core/build:$LD_LIBRARY_PATH
+
+# Or install system-wide
+sudo cp libmoonshine.so /usr/local/lib/
+sudo ldconfig
+```
+
+### CMake Errors
+
+```bash
+# Clean build directory
+rm -rf build
+mkdir build
+cd build
+cmake ..
+
+# Verbose output
+cmake .. --debug-output
+```
+
+### Audio Device Issues
+
+```bash
+# Check audio system
+ls /dev/snd/
+
+# Check user permissions
+groups $USER
+# Should include 'audio' group
+
+# Add user to audio group if needed
+sudo usermod -aG audio $USER
+# Log out and back in
+```
+
+### Python Import Errors
+
+```bash
+# Reinstall package
+pip uninstall moonshine-voice
+pip install --no-cache-dir moonshine-voice
+
+# Check installation
+python -c "import moonshine_voice; print(moonshine_voice.__version__)"
+```
+
+## Docker Support
+
+Use Moonshine Voice in containers:
+
+```dockerfile
+FROM ubuntu:22.04
+
+RUN apt-get update && apt-get install -y \
+    python3-pip \
+    libasound2-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip3 install moonshine-voice
+
+# Download models
+RUN python3 -m moonshine_voice.download --language en
+
+CMD ["python3", "-m", "moonshine_voice.mic_transcriber"]
+```
+
+Build and run:
+```bash
+docker build -t moonshine-app .
+docker run --device /dev/snd:/dev/snd moonshine-app
+```
+
+## Example Projects
+
+The repository includes C++ examples:
+- **transcriber.cpp** - Basic file transcription
+- Located in `examples/c++/`
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="C++ API Reference" icon="code" href="/api-reference/cpp">
+    Detailed C++ API documentation
+  </Card>
+  <Card title="Python Guide" icon="python" href="/platforms/python">
+    Using Python on Linux
+  </Card>
+  <Card title="Models" icon="brain" href="/models">
+    Available models and architectures
+  </Card>
+  <Card title="Building from Source" icon="hammer" href="/advanced/building">
+    Advanced build options
+  </Card>
+</CardGroup>

@@ -1,0 +1,387 @@
+---
+title: Transcription Pipeline
+description: How Moonshine Voice converts speech to text with low latency
+---
+
+## Overview
+
+Moonshine Voice transcription transforms continuous audio streams into structured text with timestamps, speaker identification, and real-time updates. The pipeline is optimized for live speech applications where responsiveness matters.
+
+## Transcription Flow
+
+```
+Audio Input → VAD Segmentation → ASR Model → Speaker ID → Events
+     ↓              ↓                ↓           ↓          ↓
+  16kHz PCM    Speech/Silence   Tokens→Text  Embeddings  Listeners
+```
+
+## Stage 1: Audio Preprocessing
+
+### Input Format
+
+The transcriber accepts audio in any format through `add_audio()`:
+
+```python
+transcriber.add_audio(
+    audio_data,    # List[float] or array of PCM samples
+    sample_rate    # int, e.g., 44100, 16000, 48000
+)
+```
+
+**Internal conversion:**
+- Sample rate → Resampled to 16kHz
+- Channels → Converted to mono
+- Format → Normalized to float32 range [-1.0, 1.0]
+
+<Info>
+  The library uses 16kHz internally. To avoid resampling overhead, capture audio at 16kHz when possible.
+</Info>
+
+### Buffering Strategy
+
+From `python/src/moonshine_voice/transcriber.py:359-374`:
+
+```python
+def add_audio(self, audio_data: List[float], sample_rate: int = 16000):
+    """Add audio data to the stream."""
+    audio_array = (ctypes.c_float * len(audio_data))(*audio_data)
+    error = self._lib.moonshine_transcribe_add_audio_to_stream(
+        self._transcriber._handle,
+        self._handle,
+        audio_array,
+        len(audio_data),
+        sample_rate,
+        0,
+    )
+    check_error(error)
+    self._stream_time += len(audio_data) / sample_rate
+    if self._stream_time - self._last_update_time >= self._update_interval:
+        self.update_transcription(0)
+        self._last_update_time = self._stream_time
+```
+
+Audio is buffered internally and automatically triggers transcription updates at the `update_interval` (default 0.5 seconds).
+
+## Stage 2: Voice Activity Detection
+
+The Silero VAD model detects speech and segments audio into phrases.
+
+### VAD Configuration
+
+From README.md lines 669-676, these options control VAD behavior:
+
+```python
+transcriber = Transcriber(
+    model_path=model_path,
+    model_arch=ModelArch.BASE,
+    options={
+        "vad_threshold": "0.5",          # Sensitivity (0.0-1.0)
+        "vad_window_duration": "0.5",    # Averaging window in seconds
+        "vad_look_behind_sample_count": "8192",  # Samples to prepend
+        "vad_max_segment_duration": "15.0",     # Max line length
+    }
+)
+```
+
+### How VAD Works
+
+From `core/silero-vad.h:22-89`:
+
+1. **Frame Processing**: VAD runs on 32ms frames (512 samples at 16kHz)
+2. **Context Addition**: 64 samples of context from previous chunk for continuity
+3. **Probability Output**: Returns probability [0.0-1.0] that frame contains speech
+4. **Averaging**: Results averaged over `vad_window_duration` for stability
+5. **Thresholding**: When average exceeds `vad_threshold`, speech detected
+
+<Tip>
+  Lower `vad_threshold` (e.g., 0.3) creates longer segments with more background noise. Higher values (e.g., 0.7) break speech into smaller chunks but risk clipping words.
+</Tip>
+
+### Speech Padding
+
+To avoid cutting off speech starts/ends:
+
+- **Look-behind**: 8192 samples (512ms) prepended when speech detected
+- **Speech pad**: 30ms padding added around detected speech
+- **Min silence**: 100ms silence required to end segment
+- **Min speech**: 250ms minimum segment duration
+
+### Segment Duration Management
+
+From README.md:675:
+
+> `vad_max_segment_duration`: Sets the longest duration a line can be before it's marked as complete. Default is 15 seconds. The `vad_threshold` is linearly decreased from 2/3 of max duration to force finding a break.
+
+## Stage 3: Speech-to-Text Model
+
+Moonshine ASR models convert audio segments to text.
+
+### Model Architecture Types
+
+From `core/moonshine-c-api.h:97-103`:
+
+```c
+#define MOONSHINE_MODEL_ARCH_TINY (0)
+#define MOONSHINE_MODEL_ARCH_BASE (1)
+#define MOONSHINE_MODEL_ARCH_TINY_STREAMING (2)
+#define MOONSHINE_MODEL_ARCH_BASE_STREAMING (3)
+#define MOONSHINE_MODEL_ARCH_SMALL_STREAMING (4)
+#define MOONSHINE_MODEL_ARCH_MEDIUM_STREAMING (5)
+```
+
+### Non-Streaming Transcription
+
+For offline audio or complete segments:
+
+```python
+transcript = transcriber.transcribe_without_streaming(
+    audio_data=audio_samples,
+    sample_rate=16000,
+    flags=0
+)
+
+for line in transcript.lines:
+    print(f"[{line.start_time:.2f}s] {line.text}")
+```
+
+From `python/src/moonshine_voice/transcriber.py:146-186`:
+
+- Processes entire audio array at once
+- VAD segments audio into phrases
+- Each segment transcribed independently
+- Returns complete `Transcript` with all lines finalized
+
+### Streaming Transcription
+
+For live audio with incremental updates:
+
+```python
+transcriber.start()
+
+# Feed audio in chunks as it arrives
+for chunk in audio_chunks:
+    transcriber.add_audio(chunk, sample_rate)
+    # Transcription happens automatically at update_interval
+
+transcript = transcriber.stop()
+```
+
+Streaming models cache computation for lower latency (see [Streaming concepts](/concepts/streaming)).
+
+## Stage 4: Token Decoding
+
+The ASR model outputs tokens that must be decoded to text:
+
+1. **Encoder**: Audio → latent representation
+2. **Decoder**: Latent representation → token sequence
+3. **Tokenizer**: Tokens → UTF-8 text
+
+Tokenizer stored in `tokenizer.bin` file, loaded from model directory.
+
+### Hallucination Detection
+
+From README.md:667:
+
+> `max_tokens_per_second`: Models occasionally get caught in an infinite decoder loop, repeating the same words. We compare tokens to duration and truncate if too many. Default is 6.5, but for non-Latin languages use 13.0.
+
+```python
+options = {
+    "max_tokens_per_second": "13.0"  # For Korean, Japanese, etc.
+}
+```
+
+## Stage 5: Speaker Identification
+
+Optional diarization assigns speaker IDs to segments.
+
+### Speaker ID Assignment
+
+From `core/moonshine-c-api.h:159-162`:
+
+```c
+/* The speaker ID is another 64-bit randomly-generated number, used to identify
+   the calculated speaker of the line, for diarization purposes. This is not
+   available until the line has accumulated enough audio data to be confident
+   in the speaker identification, or if the line is complete. */
+```
+
+**Speaker metadata:**
+- `has_speaker_id`: Boolean, true when speaker identified
+- `speaker_id`: Unique 64-bit identifier for this speaker
+- `speaker_index`: Display order (0, 1, 2 for "Speaker 1", "Speaker 2", etc.)
+
+### Configuration
+
+```python
+options = {
+    "identify_speakers": "true"  # Enable (default)
+    # or
+    "identify_speakers": "false"  # Disable for performance
+}
+```
+
+<Note>
+  Speaker identification is experimental. Accuracy may not be suitable for all applications.
+</Note>
+
+## Transcript Structure
+
+### TranscriptLine
+
+From `core/moonshine-c-api.h:168-202`, each line contains:
+
+```python
+line = TranscriptLine(
+    text="Hello world",               # UTF-8 transcribed text
+    start_time=1.5,                    # Start offset in seconds
+    duration=2.3,                      # Segment length in seconds
+    line_id=0x1234567890ABCDEF,        # Unique 64-bit ID
+    is_complete=True,                  # Speech ended?
+    is_updated=True,                   # Changed since last update?
+    is_new=False,                      # Just added?
+    has_text_changed=True,             # Text changed?
+    has_speaker_id=True,               # Speaker identified?
+    speaker_id=0xFEDCBA0987654321,    # Speaker's unique ID
+    speaker_index=0,                   # Speaker #1
+    audio_data=[...],                  # Raw 16kHz PCM audio
+    last_transcription_latency_ms=87   # Processing time
+)
+```
+
+### Transcript
+
+From `core/moonshine-c-api.h:204-208`:
+
+```python
+transcript = Transcript(
+    lines=[line1, line2, line3, ...]  # Time-ordered list
+)
+```
+
+## Update Intervals
+
+Transcription doesn't happen on every `add_audio()` call. From `core/moonshine-c-api.h:456-460`:
+
+> By default this function will only perform full analysis if there has been more than 200ms of new samples since the last complete analysis. This can be overridden by setting the `MOONSHINE_FLAG_FORCE_UPDATE` flag.
+
+**Configurable via:**
+- Constructor: `update_interval=0.5` (seconds)
+- Option: `transcription_interval` in options dict
+- Manual: `update_transcription(MOONSHINE_FLAG_FORCE_UPDATE)`
+
+```python
+# Force immediate update
+transcript = stream.update_transcription(
+    flags=Transcriber.MOONSHINE_FLAG_FORCE_UPDATE
+)
+```
+
+## Event Flow Guarantees
+
+From README.md:277-288, the transcription event system provides these guarantees:
+
+1. `LineStarted` called exactly once per segment
+2. `LineCompleted` called exactly once after `LineStarted`
+3. `LineUpdated`/`LineTextChanged` only between started and completed
+4. Only one line active at a time per stream
+5. Completed lines never modified again
+6. `line_id` remains stable throughout line's lifetime
+7. Calling `stop()` completes any active lines
+
+## Performance Optimization
+
+### Skip Transcription
+
+If you only need VAD segmentation:
+
+```python
+options = {"skip_transcription": "true"}
+transcriber = Transcriber(model_path, model_arch, options=options)
+
+# Lines will have audio_data but empty text
+for line in transcript.lines:
+    process_audio_segment(line.audio_data)
+```
+
+### Disable Audio Return
+
+Reduce memory overhead:
+
+```python
+options = {"return_audio_data": "false"}
+# line.audio_data will be None
+```
+
+## Debugging Transcription
+
+### Save Input Audio
+
+From README.md:395-404:
+
+```python
+options = {"save_input_wav_path": "."}
+transcriber = Transcriber(model_path, model_arch, options=options)
+# Saves input_1.wav, input_2.wav, etc. for each stream
+```
+
+### Log API Calls
+
+```python
+options = {"log_api_calls": "true"}
+# Prints all C API calls to console
+```
+
+### Log Output Text
+
+```python
+options = {"log_output_text": "true"}
+# Prints transcription results to console
+```
+
+## Example: Complete Transcription
+
+```python
+from moonshine_voice import Transcriber, ModelArch, load_wav_file
+
+# Load audio
+audio_data, sample_rate = load_wav_file("speech.wav")
+
+# Create transcriber
+transcriber = Transcriber(
+    model_path="/path/to/models",
+    model_arch=ModelArch.BASE,
+    update_interval=0.5,
+    options={
+        "vad_threshold": "0.5",
+        "identify_speakers": "true"
+    }
+)
+
+transcriber.start()
+
+# Simulate streaming by chunking
+chunk_size = int(0.1 * sample_rate)  # 100ms chunks
+for i in range(0, len(audio_data), chunk_size):
+    chunk = audio_data[i:i + chunk_size]
+    transcriber.add_audio(chunk, sample_rate)
+
+transcript = transcriber.stop()
+
+# Print results
+for line in transcript.lines:
+    speaker = f"Speaker {line.speaker_index + 1}: " if line.has_speaker_id else ""
+    print(f"[{line.start_time:.1f}s] {speaker}{line.text}")
+
+transcriber.close()
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Streaming ASR" icon="bolt" href="/concepts/streaming">
+    Learn how streaming reduces latency
+  </Card>
+  <Card title="Model Architectures" icon="brain" href="/concepts/models">
+    Choose the right model for your needs
+  </Card>
+</CardGroup>

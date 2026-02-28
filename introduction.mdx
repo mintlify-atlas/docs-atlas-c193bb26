@@ -1,0 +1,176 @@
+---
+title: 'Moonshine Voice'
+description: 'Fast, accurate, on-device AI toolkit for building real-time voice applications'
+---
+
+<img className="block" src="/images/hero-light.svg" alt="Hero Light" />
+
+## Voice Interfaces for Everyone
+
+Moonshine Voice is an open source AI toolkit for developers building real-time voice applications. Everything runs on-device with cutting-edge accuracy and ultra-low latency.
+
+<CardGroup cols={2}>
+  <Card
+    title="Quickstart"
+    icon="rocket"
+    href="/quickstart"
+  >
+    Get transcribing in under 2 minutes with Python
+  </Card>
+  <Card
+    title="Installation"
+    icon="download"
+    href="/installation"
+  >
+    Install for Python, iOS, Android, and more
+  </Card>
+  <Card
+    title="Python Guide"
+    icon="python"
+    href="/python-guide"
+  >
+    Complete Python API reference and examples
+  </Card>
+  <Card
+    title="API Reference"
+    icon="code"
+    href="/api-reference"
+  >
+    Full API documentation for all platforms
+  </Card>
+</CardGroup>
+
+## Why Moonshine Voice?
+
+### On-Device & Private
+
+Everything runs locally on your device. Fast, private, and no account, credit card, or API keys needed. Your users' voice data never leaves their device.
+
+### Optimized for Live Speech
+
+Built specifically for real-time streaming applications with low latency responses. The framework does work while the user is still talking, delivering sub-200ms response times.
+
+### Higher Accuracy Than Whisper
+
+Our Medium Streaming model achieves **6.65% WER** on the HuggingFace OpenASR Leaderboard, outperforming Whisper Large V3 (7.44% WER) while using only 245M parameters vs 1.5B.
+
+<CardGroup cols={3}>
+  <Card title="107ms" icon="gauge-high">
+    MacBook Pro latency
+  </Card>
+  <Card title="5-10x faster" icon="bolt">
+    Than Whisper in live speech
+  </Card>
+  <Card title="26MB" icon="feather">
+    Smallest model size
+  </Card>
+</CardGroup>
+
+### Cross-Platform Support
+
+The same library runs everywhere with one consistent API:
+
+<CardGroup cols={3}>
+  <Card icon="python" title="Python">
+    pip install moonshine-voice
+  </Card>
+  <Card icon="apple" title="iOS & MacOS">
+    Swift Package Manager
+  </Card>
+  <Card icon="android" title="Android">
+    Maven package
+  </Card>
+  <Card icon="windows" title="Windows">
+    Visual Studio support
+  </Card>
+  <Card icon="linux" title="Linux">
+    Native C++ library
+  </Card>
+  <Card icon="microchip" title="Edge Devices">
+    Raspberry Pi, IoT, wearables
+  </Card>
+</CardGroup>
+
+## Key Features
+
+<AccordionGroup>
+  <Accordion title="Flexible Input Windows">
+    Supply any length of audio (up to ~30 seconds) and the model only spends compute on that input. No wasted computation on zero-padding like Whisper's fixed 30-second window.
+  </Accordion>
+
+  <Accordion title="Streaming with Caching">
+    Models cache input encoding and decoder state for incremental audio addition. This dramatically reduces latency by skipping redundant computation on audio that's already been processed.
+  </Accordion>
+
+  <Accordion title="Multiple Languages">
+    Supports English, Spanish, Mandarin, Japanese, Korean, Vietnamese, Ukrainian, and Arabic. Language-specific models deliver much higher accuracy than multilingual alternatives.
+  </Accordion>
+
+  <Accordion title="Complete Voice Pipeline">
+    Batteries included with microphone capture, voice activity detection, speech-to-text, speaker identification (diarization), and command recognition - all in one library.
+  </Accordion>
+
+  <Accordion title="Intent Recognition">
+    Built-in command recognition using semantic matching. Users can say commands naturally: "Let there be light" triggers "Turn on the lights" with 76% confidence.
+  </Accordion>
+
+  <Accordion title="Event-Driven Architecture">
+    High-level APIs with event listeners for line started, text changed, and line completed events. Focus on your application logic, not audio processing details.
+  </Accordion>
+</AccordionGroup>
+
+## Performance Comparison
+
+Moonshine dramatically outperforms Whisper for live speech applications:
+
+| Model                      | WER    | Parameters | MacBook Pro | Linux x86 | R. Pi 5   |
+| -------------------------- | ------ | ---------- | ----------- | --------- | --------- |
+| **Moonshine Medium Streaming** | **6.65%**  | **245M**       | **107ms**       | **269ms**     | **802ms**     |
+| Whisper Large v3           | 7.44%  | 1.5B       | 11,286ms    | 16,919ms  | N/A       |
+| **Moonshine Small Streaming**  | **7.84%**  | **123M**       | **73ms**        | **165ms**     | **527ms**     |
+| Whisper Small              | 8.59%  | 244M       | 1940ms      | 3,425ms   | 10,397ms  |
+| **Moonshine Tiny Streaming**   | **12.00%** | **34M**        | **34ms**        | **69ms**      | **237ms**     |
+| Whisper Tiny               | 12.81% | 39M        | 277ms       | 1,141ms   | 5,863ms   |
+
+<Tip>
+  Moonshine achieves **5-40x lower latency** than Whisper while maintaining competitive or superior accuracy. This makes it ideal for interactive voice interfaces where responsiveness is critical.
+</Tip>
+
+## Research Foundation
+
+Moonshine Voice is based on cutting-edge research from the Moonshine AI team:
+
+- [**Moonshine: Speech Recognition for Live Transcription**](https://arxiv.org/abs/2410.15608) - First-generation architecture with flexible input windows
+- [**Flavors of Moonshine**](https://arxiv.org/abs/2509.02523) - Language-specific models for better accuracy
+- [**Moonshine v2: Ergodic Streaming Encoder ASR**](https://arxiv.org/abs/2602.12241) - Streaming approach for latency-critical applications
+
+## Get Started
+
+Ready to add voice to your application? Start with our quickstart guide:
+
+<Card
+  title="Quickstart Guide"
+  icon="rocket"
+  href="/quickstart"
+>
+  Transcribe audio in under 2 minutes
+</Card>
+
+## Community & Support
+
+<CardGroup cols={2}>
+  <Card
+    title="Join Discord"
+    icon="discord"
+    href="https://discord.gg/27qp9zSRXF"
+  >
+    Get live support from the community
+  </Card>
+  <Card
+    title="GitHub Issues"
+    icon="github"
+    href="https://github.com/moonshine-ai/moonshine/issues"
+  >
+    Report bugs and request features
+  </Card>
+</CardGroup>

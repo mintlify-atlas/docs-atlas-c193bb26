@@ -1,0 +1,525 @@
+---
+title: 'Android Platform Guide'
+description: 'Complete guide to integrating Moonshine Voice in Android applications'
+icon: 'android'
+---
+
+Moonshine Voice provides native Android support through Maven, making it straightforward to add voice transcription to your Android apps.
+
+## Installation
+
+<Steps>
+  <Step title="Add Version to Dependencies">
+    Add the Moonshine Voice version to `gradle/libs.versions.toml`:
+    
+    ```toml
+    [versions]
+    moonshineVoice = "0.0.49"
+    
+    [libraries]
+    moonshine-voice = { group = "ai.moonshine", name = "moonshine-voice", version.ref = "moonshineVoice" }
+    ```
+  </Step>
+  
+  <Step title="Add to App Dependencies">
+    In your `app/build.gradle.kts`, add the library:
+    
+    ```kotlin
+    dependencies {
+        implementation(libs.moonshine.voice)
+        // ... other dependencies
+    }
+    ```
+  </Step>
+  
+  <Step title="Add Microphone Permission">
+    In `AndroidManifest.xml`, add the permission:
+    
+    ```xml
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    ```
+  </Step>
+  
+  <Step title="Add Model Files to Assets">
+    Download models and add to `app/src/main/assets/`:
+    
+    ```bash
+    # Download English models
+    pip install moonshine-voice
+    python -m moonshine_voice.download --language en
+    
+    # Copy to assets folder
+    cp -r /path/to/downloaded/models app/src/main/assets/base-en
+    ```
+  </Step>
+</Steps>
+
+## Quick Start Example
+
+Download and try the pre-built example:
+
+```bash
+# Download example app
+wget https://github.com/moonshine-ai/moonshine/releases/latest/download/android-examples.tar.gz
+tar -xzf android-examples.tar.gz
+
+# Open in Android Studio
+# File > Open > Select 'Transcriber' folder
+```
+
+Build and run on your device to see live transcription.
+
+## Basic Implementation
+
+### Activity with Live Transcription
+
+Here's a complete example using `MicTranscriber`:
+
+```java
+package ai.moonshine.example;
+
+import ai.moonshine.voice.JNI;
+import ai.moonshine.voice.MicTranscriber;
+import ai.moonshine.voice.TranscriptEvent;
+import ai.moonshine.voice.TranscriptEventListener;
+
+import android.content.pm.PackageManager;
+import android.os.Bundle;
+import android.widget.TextView;
+import androidx.annotation.NonNull;
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
+import com.google.android.material.floatingactionbutton.FloatingActionButton;
+
+public class MainActivity extends AppCompatActivity {
+    
+    private RecyclerView messagesRecyclerView;
+    private TranscriptAdapter adapter;
+    private FloatingActionButton recordButton;
+    private MicTranscriber transcriber;
+    private boolean isTranscribing = false;
+    
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_main);
+        
+        // Setup RecyclerView
+        messagesRecyclerView = findViewById(R.id.messagesRecyclerView);
+        adapter = new TranscriptAdapter();
+        messagesRecyclerView.setLayoutManager(new LinearLayoutManager(this));
+        messagesRecyclerView.setAdapter(adapter);
+        
+        // Create transcriber
+        transcriber = new MicTranscriber(this);
+        
+        // Load model from assets
+        transcriber.loadFromAssets(
+            this, 
+            "base-en", 
+            JNI.MOONSHINE_MODEL_ARCH_BASE
+        );
+        
+        // Add event listener
+        transcriber.addListener(event -> 
+            event.accept(new TranscriptEventListener() {
+                @Override
+                public void onLineStarted(TranscriptEvent.LineStarted e) {
+                    runOnUiThread(() -> {
+                        adapter.addLine("...");
+                        messagesRecyclerView.smoothScrollToPosition(
+                            adapter.getItemCount() - 1
+                        );
+                    });
+                }
+                
+                @Override
+                public void onLineTextChanged(TranscriptEvent.LineTextChanged e) {
+                    runOnUiThread(() -> {
+                        adapter.updateLastLine(e.line.text);
+                        messagesRecyclerView.smoothScrollToPosition(
+                            adapter.getItemCount() - 1
+                        );
+                    });
+                }
+                
+                @Override
+                public void onLineCompleted(TranscriptEvent.LineCompleted e) {
+                    runOnUiThread(() -> {
+                        adapter.updateLastLine(e.line.text);
+                    });
+                }
+            })
+        );
+        
+        // Request microphone permission
+        if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) 
+                == PackageManager.PERMISSION_GRANTED) {
+            transcriber.onMicPermissionGranted();
+        } else {
+            requestPermissions(
+                new String[]{android.Manifest.permission.RECORD_AUDIO}, 
+                1
+            );
+        }
+        
+        // Setup record button
+        recordButton = findViewById(R.id.recordButton);
+        recordButton.setOnClickListener(v -> toggleRecording());
+    }
+    
+    private void toggleRecording() {
+        if (isTranscribing) {
+            transcriber.stop();
+            isTranscribing = false;
+            recordButton.setBackgroundTintList(
+                android.content.res.ColorStateList.valueOf(
+                    android.graphics.Color.parseColor("#ffffff")
+                )
+            );
+        } else {
+            transcriber.start();
+            isTranscribing = true;
+            recordButton.setBackgroundTintList(
+                android.content.res.ColorStateList.valueOf(
+                    android.graphics.Color.parseColor("#ff6b6b")
+                )
+            );
+        }
+    }
+    
+    @Override
+    public void onRequestPermissionsResult(int requestCode,
+                                          @NonNull String[] permissions,
+                                          @NonNull int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == 1) {
+            if (grantResults.length > 0 
+                    && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                transcriber.onMicPermissionGranted();
+            }
+        }
+    }
+    
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        if (transcriber != null) {
+            transcriber.close();
+        }
+    }
+}
+```
+
+### Simple RecyclerView Adapter
+
+```java
+import android.view.LayoutInflater;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.TextView;
+import androidx.annotation.NonNull;
+import androidx.recyclerview.widget.RecyclerView;
+import java.util.ArrayList;
+import java.util.List;
+
+public class TranscriptAdapter extends RecyclerView.Adapter<TranscriptAdapter.ViewHolder> {
+    
+    private List<String> lines = new ArrayList<>();
+    
+    public void addLine(String text) {
+        lines.add(text);
+        notifyItemInserted(lines.size() - 1);
+    }
+    
+    public void updateLastLine(String text) {
+        if (!lines.isEmpty()) {
+            int lastIndex = lines.size() - 1;
+            lines.set(lastIndex, text);
+            notifyItemChanged(lastIndex);
+        }
+    }
+    
+    @NonNull
+    @Override
+    public ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
+        View view = LayoutInflater.from(parent.getContext())
+            .inflate(android.R.layout.simple_list_item_1, parent, false);
+        return new ViewHolder(view);
+    }
+    
+    @Override
+    public void onBindViewHolder(@NonNull ViewHolder holder, int position) {
+        holder.textView.setText(lines.get(position));
+    }
+    
+    @Override
+    public int getItemCount() {
+        return lines.size();
+    }
+    
+    static class ViewHolder extends RecyclerView.ViewHolder {
+        TextView textView;
+        
+        ViewHolder(View view) {
+            super(view);
+            textView = view.findViewById(android.R.id.text1);
+        }
+    }
+}
+```
+
+## Model Architectures
+
+Use the appropriate constant from `JNI` class:
+
+```java
+import ai.moonshine.voice.JNI;
+
+// Available architectures
+JNI.MOONSHINE_MODEL_ARCH_TINY           // 0 - Smallest (26M params)
+JNI.MOONSHINE_MODEL_ARCH_BASE           // 1 - Good balance (58M params)
+JNI.MOONSHINE_MODEL_ARCH_TINY_STREAMING // 2 - Tiny with streaming (34M params)
+JNI.MOONSHINE_MODEL_ARCH_SMALL_STREAMING // 3 - High accuracy (123M params)
+JNI.MOONSHINE_MODEL_ARCH_MEDIUM_STREAMING // 4 - Best accuracy (245M params)
+```
+
+Example usage:
+
+```java
+// Load Base model
+transcriber.loadFromAssets(
+    context, 
+    "base-en", 
+    JNI.MOONSHINE_MODEL_ARCH_BASE
+);
+
+// Load Tiny Streaming model
+transcriber.loadFromAssets(
+    context, 
+    "tiny-streaming-en", 
+    JNI.MOONSHINE_MODEL_ARCH_TINY_STREAMING
+);
+```
+
+## Loading Models
+
+### From Assets
+
+The recommended approach for bundled models:
+
+```java
+transcriber.loadFromAssets(
+    context,
+    "base-en",  // Folder name in assets/
+    JNI.MOONSHINE_MODEL_ARCH_BASE
+);
+```
+
+### From File Path
+
+For downloaded or external models:
+
+```java
+import ai.moonshine.voice.Transcriber;
+
+Transcriber transcriber = new Transcriber(
+    context,
+    "/sdcard/Download/base-en",  // Full path to model folder
+    JNI.MOONSHINE_MODEL_ARCH_BASE
+);
+```
+
+## Event-Driven Interface
+
+Moonshine uses a visitor pattern for type-safe event handling:
+
+```java
+transcriber.addListener(event -> {
+    event.accept(new TranscriptEventListener() {
+        @Override
+        public void onLineStarted(TranscriptEvent.LineStarted e) {
+            // New speech segment detected
+            String text = e.line.text;
+            long lineId = e.line.lineId;
+            double startTime = e.line.startTime;
+        }
+        
+        @Override
+        public void onLineTextChanged(TranscriptEvent.LineTextChanged e) {
+            // Text updated during speech
+            String updatedText = e.line.text;
+        }
+        
+        @Override
+        public void onLineCompleted(TranscriptEvent.LineCompleted e) {
+            // Speech segment finished
+            String finalText = e.line.text;
+            double duration = e.line.duration;
+        }
+    });
+});
+```
+
+## Supported Languages
+
+Download and bundle models for multiple languages:
+
+```java
+// English
+transcriber.loadFromAssets(context, "base-en", JNI.MOONSHINE_MODEL_ARCH_BASE);
+
+// Spanish
+transcriber.loadFromAssets(context, "base-es", JNI.MOONSHINE_MODEL_ARCH_BASE);
+
+// Japanese
+transcriber.loadFromAssets(context, "base-ja", JNI.MOONSHINE_MODEL_ARCH_BASE);
+
+// Korean
+transcriber.loadFromAssets(context, "tiny-ko", JNI.MOONSHINE_MODEL_ARCH_TINY);
+```
+
+Available: English, Spanish, Japanese, Korean, Mandarin, Vietnamese, Ukrainian, Arabic
+
+## Threading Considerations
+
+<Warning>
+Event callbacks are NOT called on the UI thread. Always use `runOnUiThread()` when updating UI:
+</Warning>
+
+```java
+transcriber.addListener(event -> 
+    event.accept(new TranscriptEventListener() {
+        @Override
+        public void onLineTextChanged(TranscriptEvent.LineTextChanged e) {
+            // Wrong - will crash
+            // textView.setText(e.line.text);
+            
+            // Correct - safe UI update
+            runOnUiThread(() -> {
+                textView.setText(e.line.text);
+            });
+        }
+    })
+);
+```
+
+## Build Configuration
+
+### Minimum SDK Requirements
+
+```kotlin
+android {
+    defaultConfig {
+        minSdk = 24  // Android 7.0 or higher
+        targetSdk = 35
+    }
+}
+```
+
+### ProGuard Rules
+
+If using ProGuard/R8, add these rules:
+
+```proguard
+# Moonshine Voice
+-keep class ai.moonshine.voice.** { *; }
+-keepclassmembers class ai.moonshine.voice.** { *; }
+```
+
+## Performance Optimization
+
+### Model Selection
+
+| Model | APK Size | RAM | Latency (Pixel 7) |
+|-------|----------|-----|-------------------|
+| Tiny | +26MB | ~80MB | ~50ms |
+| Tiny Streaming | +34MB | ~90MB | ~40ms |
+| Base | +58MB | ~150MB | ~70ms |
+| Small Streaming | +123MB | ~280MB | ~120ms |
+| Medium Streaming | +245MB | ~500MB | ~200ms |
+
+### Tips
+
+1. **Use App Bundles** - Google Play will only download models for user's device
+2. **On-Demand Delivery** - Download models after install to reduce initial size
+3. **Test on Low-End Devices** - Ensure acceptable performance on entry-level phones
+4. **Monitor Memory** - Large models can cause issues on devices with limited RAM
+
+## Common Issues
+
+### Model Files Not Found
+
+Ensure models are in `app/src/main/assets/` and structured correctly:
+
+```
+app/src/main/assets/
+└── base-en/
+    ├── encoder_model.ort
+    ├── decoder_model_merged.ort
+    └── tokenizer.bin
+```
+
+### Microphone Permission Denied
+
+Check permission status before starting:
+
+```java
+import android.Manifest;
+import androidx.core.content.ContextCompat;
+
+if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+        != PackageManager.PERMISSION_GRANTED) {
+    // Request permission
+    ActivityCompat.requestPermissions(
+        this,
+        new String[]{Manifest.permission.RECORD_AUDIO},
+        REQUEST_RECORD_AUDIO
+    );
+} else {
+    // Permission already granted
+    transcriber.onMicPermissionGranted();
+}
+```
+
+### App Crashes on Start
+
+Common causes:
+1. Missing native libraries (check ABI filters)
+2. Model files corrupted or incomplete
+3. Insufficient device memory
+4. Missing `onMicPermissionGranted()` call
+
+### Gradle Sync Issues
+
+If package doesn't resolve:
+1. Check Maven repository is accessible
+2. Verify version number is correct
+3. Sync project with Gradle files
+4. Invalidate caches and restart Android Studio
+
+## Example Projects
+
+The repository includes a complete example:
+
+- **Transcriber** - Full Android app with live microphone transcription
+- Located in `examples/android/Transcriber/`
+- Demonstrates RecyclerView integration, permissions, and event handling
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="API Reference" icon="code" href="/api-reference/android">
+    Detailed Android API documentation
+  </Card>
+  <Card title="Models" icon="brain" href="/models">
+    Available models and architectures
+  </Card>
+  <Card title="Examples" icon="flask" href="/examples/android">
+    More Android examples
+  </Card>
+  <Card title="Troubleshooting" icon="wrench" href="/troubleshooting/android">
+    Common issues and solutions
+  </Card>
+</CardGroup>

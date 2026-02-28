@@ -1,0 +1,490 @@
+---
+title: "Data Structures"
+description: "C++ API reference for Moonshine Voice data structures"
+---
+
+## TranscriptLine
+
+A single line of transcription representing a phrase or segment of speech.
+
+```cpp
+struct TranscriptLine
+```
+
+### Fields
+
+<ParamField path="text" type="std::string">
+  UTF-8 encoded transcription text
+</ParamField>
+
+<ParamField path="startTime" type="float">
+  Time offset from the start of the audio in seconds
+</ParamField>
+
+<ParamField path="duration" type="float">
+  Duration of the segment in seconds
+</ParamField>
+
+<ParamField path="lineId" type="uint64_t">
+  Stable identifier for the line (unique within a session)
+</ParamField>
+
+<ParamField path="isComplete" type="bool">
+  Whether the line is complete. When `true`, the text will not change anymore.
+</ParamField>
+
+<ParamField path="isUpdated" type="bool">
+  Whether the line has been updated since the previous call (streaming only)
+</ParamField>
+
+<ParamField path="isNew" type="bool">
+  Whether the line was newly added since the previous call (streaming only)
+</ParamField>
+
+<ParamField path="hasTextChanged" type="bool">
+  Whether the text has changed since the previous call (streaming only)
+</ParamField>
+
+<ParamField path="hasSpeakerId" type="bool">
+  Whether a speaker ID has been calculated for the line
+</ParamField>
+
+<ParamField path="speakerId" type="uint64_t">
+  The speaker ID for the line (only valid if `hasSpeakerId` is `true`)
+</ParamField>
+
+<ParamField path="speakerIndex" type="uint32_t">
+  The order the speaker appeared in the current transcript (0-based)
+</ParamField>
+
+<ParamField path="lastTranscriptionLatencyMs" type="int32_t">
+  The latency of the last transcription operation in milliseconds
+</ParamField>
+
+<ParamField path="audioData" type="std::vector<float>">
+  Audio data for this line if available (16KHz float PCM, -1.0 to 1.0)
+</ParamField>
+
+### Methods
+
+#### toString
+
+Returns a string representation of the transcript line.
+
+```cpp
+std::string toString() const
+```
+
+**Example:**
+
+```cpp
+const TranscriptLine& line = // ... from event
+
+std::cout << "[" << line.startTime << "s] " 
+          << line.text << std::endl;
+std::cout << "Duration: " << line.duration << "s" << std::endl;
+std::cout << "Complete: " << (line.isComplete ? "yes" : "no") 
+          << std::endl;
+
+if (line.hasSpeakerId) {
+    std::cout << "Speaker " << (line.speakerIndex + 1) << std::endl;
+}
+
+// Full details
+std::cout << line.toString() << std::endl;
+```
+
+## Transcript
+
+A complete transcript containing multiple lines.
+
+```cpp
+struct Transcript
+```
+
+### Fields
+
+<ParamField path="lines" type="std::vector<TranscriptLine>">
+  All lines of the transcript in chronological order
+</ParamField>
+
+### Methods
+
+#### toString
+
+Returns a string representation of the transcript.
+
+```cpp
+std::string toString() const
+```
+
+**Example:**
+
+```cpp
+Transcript transcript = transcriber.transcribeWithoutStreaming(
+    audioData,
+    16000
+);
+
+for (const auto& line : transcript.lines) {
+    std::cout << "[" << line.startTime << "s] " 
+              << line.text << std::endl;
+}
+
+// Get full text
+std::string fullText;
+for (const auto& line : transcript.lines) {
+    if (!fullText.empty()) {
+        fullText += " ";
+    }
+    fullText += line.text;
+}
+std::cout << "Full transcript: " << fullText << std::endl;
+
+// Or use toString
+std::cout << transcript.toString() << std::endl;
+```
+
+## TranscriptEvent (Base Class)
+
+Base class for all transcript events.
+
+```cpp
+class TranscriptEvent
+```
+
+### Fields
+
+<ParamField path="line" type="TranscriptLine">
+  The transcript line associated with this event
+</ParamField>
+
+<ParamField path="streamHandle" type="int32_t">
+  The handle of the stream that emitted this event
+</ParamField>
+
+<ParamField path="type" type="Type">
+  The type of this event (LINE_STARTED, LINE_UPDATED, LINE_TEXT_CHANGED, LINE_COMPLETED, ERROR)
+</ParamField>
+
+### Event Types
+
+```cpp
+enum Type {
+    LINE_STARTED,
+    LINE_UPDATED,
+    LINE_TEXT_CHANGED,
+    LINE_COMPLETED,
+    ERROR
+}
+```
+
+## LineStarted
+
+Event emitted when a new transcription line starts.
+
+```cpp
+class LineStarted : public TranscriptEvent
+```
+
+**Example:**
+
+```cpp
+void onLineStarted(const LineStarted& event) override {
+    std::cout << "New line: " << event.line.text << std::endl;
+}
+```
+
+## LineUpdated
+
+Event emitted when an existing transcription line is updated.
+
+```cpp
+class LineUpdated : public TranscriptEvent
+```
+
+**Example:**
+
+```cpp
+void onLineUpdated(const LineUpdated& event) override {
+    std::cout << "Updated: " << event.line.text << std::endl;
+}
+```
+
+## LineTextChanged
+
+Event emitted when the text of a transcription line changes.
+
+```cpp
+class LineTextChanged : public TranscriptEvent
+```
+
+**Example:**
+
+```cpp
+void onLineTextChanged(const LineTextChanged& event) override {
+    // Update UI with new text
+    updateDisplay(event.line.text);
+}
+```
+
+## LineCompleted
+
+Event emitted when a transcription line is completed.
+
+```cpp
+class LineCompleted : public TranscriptEvent
+```
+
+**Example:**
+
+```cpp
+void onLineCompleted(const LineCompleted& event) override {
+    std::cout << "Final: " << event.line.text << std::endl;
+    // Save to database, process final result, etc.
+}
+```
+
+## Error
+
+Event emitted when an error occurs.
+
+```cpp
+class Error : public TranscriptEvent
+```
+
+### Additional Fields
+
+<ParamField path="errorMessage" type="std::string">
+  The error message describing what went wrong
+</ParamField>
+
+**Example:**
+
+```cpp
+void onError(const Error& event) override {
+    std::cerr << "Error: " << event.errorMessage << std::endl;
+}
+```
+
+## TranscriptEventListener (Abstract Class)
+
+Abstract base class for transcript event listeners.
+
+```cpp
+class TranscriptEventListener
+```
+
+### Methods
+
+All methods have default no-op implementations, so you only need to override the ones you care about.
+
+```cpp
+virtual void onLineStarted(const LineStarted& event) {}
+virtual void onLineUpdated(const LineUpdated& event) {}
+virtual void onLineTextChanged(const LineTextChanged& event) {}
+virtual void onLineCompleted(const LineCompleted& event) {}
+virtual void onError(const Error& event) {}
+```
+
+**Example:**
+
+```cpp
+class MyListener : public TranscriptEventListener {
+public:
+    // Only implement the events you care about
+    void onLineTextChanged(const LineTextChanged& event) override {
+        std::cout << event.line.text << std::endl;
+    }
+    
+    void onLineCompleted(const LineCompleted& event) override {
+        std::cout << "Final: " << event.line.text << std::endl;
+    }
+};
+```
+
+## ModelArch
+
+Model architecture enumeration.
+
+```cpp
+enum class ModelArch
+```
+
+### Values
+
+<ParamField path="TINY" type="ModelArch">
+  26 million parameters, smallest model
+</ParamField>
+
+<ParamField path="BASE" type="ModelArch">
+  58 million parameters, good balance of accuracy and speed
+</ParamField>
+
+<ParamField path="TINY_STREAMING" type="ModelArch">
+  34 million parameters, streaming variant of tiny
+</ParamField>
+
+<ParamField path="BASE_STREAMING" type="ModelArch">
+  58 million parameters, streaming variant of base
+</ParamField>
+
+<ParamField path="SMALL_STREAMING" type="ModelArch">
+  123 million parameters, higher accuracy streaming model
+</ParamField>
+
+<ParamField path="MEDIUM_STREAMING" type="ModelArch">
+  245 million parameters, highest accuracy streaming model
+</ParamField>
+
+**Example:**
+
+```cpp
+Transcriber transcriber(
+    "/path/to/models",
+    ModelArch::MEDIUM_STREAMING
+);
+```
+
+## Stream
+
+A stream for real-time transcription with event-based updates.
+
+```cpp
+class Stream
+```
+
+### Methods
+
+#### start
+
+Start the stream.
+
+```cpp
+void start()
+```
+
+#### stop
+
+Stop the stream and process any remaining audio.
+
+```cpp
+void stop()
+```
+
+#### addAudio
+
+Add audio data to the stream.
+
+```cpp
+void addAudio(
+    const std::vector<float>& audioData,
+    int32_t sampleRate = 16000
+)
+```
+
+#### updateTranscription
+
+Manually update the transcription from the stream.
+
+```cpp
+Transcript updateTranscription(uint32_t flags = 0)
+```
+
+#### addListener (Object-based)
+
+Add a TranscriptEventListener to the stream.
+
+```cpp
+void addListener(TranscriptEventListener* listener)
+```
+
+#### addListener (Function-based)
+
+Add a function-based event listener to the stream.
+
+```cpp
+void addListener(
+    std::function<void(const TranscriptEvent&)> listener
+)
+```
+
+#### removeListener
+
+Remove an event listener from the stream.
+
+```cpp
+void removeListener(TranscriptEventListener* listener)
+void removeListener(
+    std::function<void(const TranscriptEvent&)> listener
+)
+```
+
+#### removeAllListeners
+
+Remove all event listeners.
+
+```cpp
+void removeAllListeners()
+```
+
+#### close
+
+Close the stream and free its resources.
+
+```cpp
+void close()
+```
+
+#### getHandle
+
+Get the stream handle (for internal use).
+
+```cpp
+int32_t getHandle() const
+```
+
+### Constants
+
+```cpp
+static const uint32_t FLAG_FORCE_UPDATE = MOONSHINE_FLAG_FORCE_UPDATE;
+```
+
+**Example:**
+
+```cpp
+Stream stream = transcriber.createStream(0.3);
+
+stream.addListener([](const TranscriptEvent& event) {
+    if (event.type == TranscriptEvent::LINE_COMPLETED) {
+        const LineCompleted& completed = 
+            static_cast<const LineCompleted&>(event);
+        std::cout << completed.line.text << std::endl;
+    }
+});
+
+stream.start();
+stream.addAudio(audioData, 16000);
+stream.stop();
+stream.close();
+```
+
+## MoonshineException
+
+Exception class for Moonshine errors.
+
+```cpp
+class MoonshineException : public std::runtime_error
+```
+
+**Example:**
+
+```cpp
+try {
+    Transcriber transcriber("/invalid/path", ModelArch::BASE);
+} catch (const MoonshineException& e) {
+    std::cerr << "Moonshine error: " << e.what() << std::endl;
+} catch (const std::exception& e) {
+    std::cerr << "General error: " << e.what() << std::endl;
+}
+```

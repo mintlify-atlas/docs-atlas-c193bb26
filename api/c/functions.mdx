@@ -1,0 +1,906 @@
+---
+title: 'C API Functions Reference'
+description: 'Complete reference for all Moonshine C API functions, constants, and data structures'
+---
+
+## Constants
+
+### Version
+
+<ParamField path="MOONSHINE_HEADER_VERSION" type="int32_t" default="20000">
+  Header file version. Pass this to `moonshine_load_transcriber_from_files()` to ensure compatibility.
+  
+  Format: `MAJOR * 10000 + MINOR * 100 + PATCH`
+  - Version 2.0.0 = 20000
+  - Version 2.3.7 = 20307
+</ParamField>
+
+### Model Architectures
+
+<ParamField path="MOONSHINE_MODEL_ARCH_TINY" type="uint32_t" default="0">
+  Tiny model (26M parameters, 12.66% WER for English)
+</ParamField>
+
+<ParamField path="MOONSHINE_MODEL_ARCH_BASE" type="uint32_t" default="1">
+  Base model (58M parameters, 10.07% WER for English)
+</ParamField>
+
+<ParamField path="MOONSHINE_MODEL_ARCH_TINY_STREAMING" type="uint32_t" default="2">
+  Tiny streaming model (34M parameters, 12.00% WER for English)
+</ParamField>
+
+<ParamField path="MOONSHINE_MODEL_ARCH_BASE_STREAMING" type="uint32_t" default="3">
+  Base streaming model (58M parameters)
+</ParamField>
+
+<ParamField path="MOONSHINE_MODEL_ARCH_SMALL_STREAMING" type="uint32_t" default="4">
+  Small streaming model (123M parameters, 7.84% WER for English)
+</ParamField>
+
+<ParamField path="MOONSHINE_MODEL_ARCH_MEDIUM_STREAMING" type="uint32_t" default="5">
+  Medium streaming model (245M parameters, 6.65% WER for English)
+</ParamField>
+
+### Error Codes
+
+<ParamField path="MOONSHINE_ERROR_NONE" type="int32_t" default="0">
+  Operation completed successfully
+</ParamField>
+
+<ParamField path="MOONSHINE_ERROR_UNKNOWN" type="int32_t" default="-1">
+  Unknown error occurred
+</ParamField>
+
+<ParamField path="MOONSHINE_ERROR_INVALID_HANDLE" type="int32_t" default="-2">
+  Invalid transcriber or stream handle
+</ParamField>
+
+<ParamField path="MOONSHINE_ERROR_INVALID_ARGUMENT" type="int32_t" default="-3">
+  Invalid function argument
+</ParamField>
+
+### Flags
+
+<ParamField path="MOONSHINE_FLAG_FORCE_UPDATE" type="uint32_t" default="1 << 0">
+  Force stream analysis even if less than 200ms of new audio has been added
+</ParamField>
+
+### Intent Recognition Model Architectures
+
+<ParamField path="MOONSHINE_EMBEDDING_MODEL_ARCH_GEMMA_300M" type="uint32_t" default="0">
+  Gemma 300M embedding model for intent recognition
+</ParamField>
+
+## Data Structures
+
+### transcriber_option_t
+
+```c
+struct transcriber_option_t {
+  const char *name;
+  const char *value;
+};
+```
+
+Advanced configuration options for transcriber creation.
+
+<ParamField path="name" type="const char*">
+  Option name
+</ParamField>
+
+<ParamField path="value" type="const char*">
+  Option value as a string
+</ParamField>
+
+### transcript_line_t
+
+```c
+struct transcript_line_t {
+  const char *text;
+  const float *audio_data;
+  size_t audio_data_count;
+  float start_time;
+  float duration;
+  uint64_t id;
+  int8_t is_complete;
+  int8_t is_updated;
+  int8_t is_new;
+  int8_t has_text_changed;
+  int8_t has_speaker_id;
+  uint64_t speaker_id;
+  uint32_t speaker_index;
+  uint32_t last_transcription_latency_ms;
+};
+```
+
+Represents a single segment of speech (phrase or sentence).
+
+<ResponseField name="text" type="const char*">
+  UTF-8 encoded transcription text
+</ResponseField>
+
+<ResponseField name="audio_data" type="const float*">
+  Raw audio data for this segment (16kHz float PCM, -1.0 to 1.0)
+</ResponseField>
+
+<ResponseField name="audio_data_count" type="size_t">
+  Number of audio samples in audio_data
+</ResponseField>
+
+<ResponseField name="start_time" type="float">
+  Time offset from start of stream in seconds
+</ResponseField>
+
+<ResponseField name="duration" type="float">
+  Duration of the segment in seconds
+</ResponseField>
+
+<ResponseField name="id" type="uint64_t">
+  Stable 64-bit identifier for this line (remains constant across updates)
+</ResponseField>
+
+<ResponseField name="is_complete" type="int8_t">
+  **Streaming only**: 1 if speaker has finished this segment, 0 if still speaking
+</ResponseField>
+
+<ResponseField name="is_updated" type="int8_t">
+  **Streaming only**: 1 if line changed since last `moonshine_transcribe_stream()` call
+</ResponseField>
+
+<ResponseField name="is_new" type="int8_t">
+  **Streaming only**: 1 if line was newly added since last call
+</ResponseField>
+
+<ResponseField name="has_text_changed" type="int8_t">
+  **Streaming only**: 1 if text changed since last call
+</ResponseField>
+
+<ResponseField name="has_speaker_id" type="int8_t">
+  1 if speaker_id has been calculated
+</ResponseField>
+
+<ResponseField name="speaker_id" type="uint64_t">
+  Randomly-generated 64-bit identifier for the speaker (for diarization)
+</ResponseField>
+
+<ResponseField name="speaker_index" type="uint32_t">
+  Order in which this speaker appeared in the transcript (0 = first speaker)
+</ResponseField>
+
+<ResponseField name="last_transcription_latency_ms" type="uint32_t">
+  **Streaming only**: Latency of last transcription in milliseconds
+</ResponseField>
+
+### transcript_t
+
+```c
+struct transcript_t {
+  struct transcript_line_t *lines;
+  uint64_t line_count;
+};
+```
+
+Complete transcription of an audio stream or file.
+
+<ResponseField name="lines" type="transcript_line_t*">
+  Array of transcript lines in chronological order
+</ResponseField>
+
+<ResponseField name="line_count" type="uint64_t">
+  Number of lines in the transcript
+</ResponseField>
+
+### moonshine_intent_callback
+
+```c
+typedef void (*moonshine_intent_callback)(void *user_data,
+                                         const char *trigger_phrase,
+                                         const char *utterance,
+                                         float similarity);
+```
+
+Callback function for intent recognition.
+
+<ParamField path="user_data" type="void*">
+  User data pointer passed to `moonshine_register_intent()`
+</ParamField>
+
+<ParamField path="trigger_phrase" type="const char*">
+  The registered trigger phrase that matched
+</ParamField>
+
+<ParamField path="utterance" type="const char*">
+  The actual utterance that was recognized
+</ParamField>
+
+<ParamField path="similarity" type="float">
+  Similarity score between 0 and 1
+</ParamField>
+
+## Transcriber Functions
+
+### moonshine_get_version
+
+```c
+int32_t moonshine_get_version(void);
+```
+
+Returns the loaded Moonshine library version.
+
+<ResponseField name="return" type="int32_t">
+  Library version in format `MAJOR * 10000 + MINOR * 100 + PATCH`
+</ResponseField>
+
+<Note>
+This may differ from `MOONSHINE_HEADER_VERSION` if a newer shared library is loaded.
+</Note>
+
+### moonshine_error_to_string
+
+```c
+const char *moonshine_error_to_string(int32_t error);
+```
+
+Converts error code to human-readable string.
+
+<ParamField path="error" type="int32_t">
+  Error code from an API call
+</ParamField>
+
+<ResponseField name="return" type="const char*">
+  Human-readable error description
+</ResponseField>
+
+### moonshine_transcript_to_string
+
+```c
+const char *moonshine_transcript_to_string(const struct transcript_t *transcript);
+```
+
+Converts transcript to human-readable string for debugging.
+
+<ParamField path="transcript" type="const transcript_t*">
+  Transcript to convert
+</ParamField>
+
+<ResponseField name="return" type="const char*">
+  String representation (valid until next call to this function)
+</ResponseField>
+
+### moonshine_load_transcriber_from_files
+
+```c
+int32_t moonshine_load_transcriber_from_files(
+    const char *path,
+    uint32_t model_arch,
+    const struct transcriber_option_t *options,
+    uint64_t options_count,
+    int32_t moonshine_version);
+```
+
+Loads transcriber models from the filesystem.
+
+<ParamField path="path" type="const char*" required>
+  Directory containing model files:
+  - `encoder_model.ort`
+  - `decoder_model_merged.ort`
+  - `tokenizer.bin`
+</ParamField>
+
+<ParamField path="model_arch" type="uint32_t" required>
+  Model architecture (e.g., `MOONSHINE_MODEL_ARCH_BASE_STREAMING`)
+</ParamField>
+
+<ParamField path="options" type="const transcriber_option_t*">
+  Array of custom options (can be NULL)
+</ParamField>
+
+<ParamField path="options_count" type="uint64_t">
+  Number of options in the array
+</ParamField>
+
+<ParamField path="moonshine_version" type="int32_t" required>
+  Should be `MOONSHINE_HEADER_VERSION` for compatibility
+</ParamField>
+
+<ResponseField name="return" type="int32_t">
+  Non-negative transcriber handle on success, negative error code on failure
+</ResponseField>
+
+**Example:**
+
+```c
+int32_t transcriber_handle = moonshine_load_transcriber_from_files(
+  "path/to/models", MOONSHINE_MODEL_ARCH_BASE, NULL, 0,
+  MOONSHINE_HEADER_VERSION);
+if (transcriber_handle < 0) {
+  fprintf(stderr, "Error: %s\n", moonshine_error_to_string(transcriber_handle));
+}
+```
+
+### moonshine_load_transcriber_from_memory
+
+```c
+int32_t moonshine_load_transcriber_from_memory(
+    const uint8_t *encoder_model_data,
+    size_t encoder_model_data_size,
+    const uint8_t *decoder_model_data,
+    size_t decoder_model_data_size,
+    const uint8_t *tokenizer_data,
+    size_t tokenizer_data_size,
+    uint32_t model_arch,
+    const struct transcriber_option_t *options,
+    uint64_t options_count,
+    int32_t moonshine_version);
+```
+
+Loads transcriber models from memory buffers.
+
+<ParamField path="encoder_model_data" type="const uint8_t*" required>
+  Binary data for encoder model
+</ParamField>
+
+<ParamField path="encoder_model_data_size" type="size_t" required>
+  Size of encoder model data in bytes
+</ParamField>
+
+<ParamField path="decoder_model_data" type="const uint8_t*" required>
+  Binary data for decoder model
+</ParamField>
+
+<ParamField path="decoder_model_data_size" type="size_t" required>
+  Size of decoder model data in bytes
+</ParamField>
+
+<ParamField path="tokenizer_data" type="const uint8_t*" required>
+  Binary data for tokenizer
+</ParamField>
+
+<ParamField path="tokenizer_data_size" type="size_t" required>
+  Size of tokenizer data in bytes
+</ParamField>
+
+<ParamField path="model_arch" type="uint32_t" required>
+  Model architecture constant
+</ParamField>
+
+<ParamField path="options" type="const transcriber_option_t*">
+  Array of custom options (can be NULL)
+</ParamField>
+
+<ParamField path="options_count" type="uint64_t">
+  Number of options
+</ParamField>
+
+<ParamField path="moonshine_version" type="int32_t" required>
+  Should be `MOONSHINE_HEADER_VERSION`
+</ParamField>
+
+<ResponseField name="return" type="int32_t">
+  Non-negative transcriber handle on success, negative error code on failure
+</ResponseField>
+
+### moonshine_free_transcriber
+
+```c
+void moonshine_free_transcriber(int32_t transcriber_handle);
+```
+
+Releases all resources used by the transcriber.
+
+<ParamField path="transcriber_handle" type="int32_t" required>
+  Handle returned by `moonshine_load_transcriber_from_files()` or `moonshine_load_transcriber_from_memory()`
+</ParamField>
+
+<Warning>
+After freeing, the handle may be reused for future transcribers. Remove all references to it.
+</Warning>
+
+### moonshine_transcribe_without_streaming
+
+```c
+int32_t moonshine_transcribe_without_streaming(
+    int32_t transcriber_handle,
+    float *audio_data,
+    uint64_t audio_length,
+    int32_t sample_rate,
+    uint32_t flags,
+    struct transcript_t **out_transcript);
+```
+
+Transcribes complete audio array (for files or recordings).
+
+<ParamField path="transcriber_handle" type="int32_t" required>
+  Transcriber handle
+</ParamField>
+
+<ParamField path="audio_data" type="float*" required>
+  PCM audio data array (values between -1.0 and 1.0)
+</ParamField>
+
+<ParamField path="audio_length" type="uint64_t" required>
+  Number of samples in audio_data
+</ParamField>
+
+<ParamField path="sample_rate" type="int32_t" required>
+  Sample rate in Hz (16000 recommended)
+</ParamField>
+
+<ParamField path="flags" type="uint32_t">
+  Reserved for future use (pass 0)
+</ParamField>
+
+<ParamField path="out_transcript" type="transcript_t**" required>
+  Pointer to receive transcript result
+</ParamField>
+
+<ResponseField name="return" type="int32_t">
+  `MOONSHINE_ERROR_NONE` (0) on success, error code on failure
+</ResponseField>
+
+<Note>
+The transcript data is owned by the transcriber and valid until the next call or until the transcriber is freed.
+</Note>
+
+**Example:**
+
+```c
+transcript_t *transcript = NULL;
+int32_t error = moonshine_transcribe_without_streaming(
+  transcriber_handle, audio_data, audio_length, 16000, 0, &transcript);
+if (error == MOONSHINE_ERROR_NONE) {
+  for (size_t i = 0; i < transcript->line_count; i++) {
+    printf("%s\n", transcript->lines[i].text);
+  }
+}
+```
+
+## Streaming Functions
+
+### moonshine_create_stream
+
+```c
+int32_t moonshine_create_stream(int32_t transcriber_handle, uint32_t flags);
+```
+
+Creates a new audio stream for real-time transcription.
+
+<ParamField path="transcriber_handle" type="int32_t" required>
+  Transcriber handle
+</ParamField>
+
+<ParamField path="flags" type="uint32_t">
+  Reserved (pass 0)
+</ParamField>
+
+<ResponseField name="return" type="int32_t">
+  Non-negative stream handle on success, negative error code on failure
+</ResponseField>
+
+### moonshine_free_stream
+
+```c
+int32_t moonshine_free_stream(int32_t transcriber_handle, int32_t stream_handle);
+```
+
+Releases stream resources.
+
+<ParamField path="transcriber_handle" type="int32_t" required>
+  Transcriber handle
+</ParamField>
+
+<ParamField path="stream_handle" type="int32_t" required>
+  Stream handle to free
+</ParamField>
+
+<ResponseField name="return" type="int32_t">
+  `MOONSHINE_ERROR_NONE` on success, error code on failure
+</ResponseField>
+
+### moonshine_start_stream
+
+```c
+int32_t moonshine_start_stream(int32_t transcriber_handle, int32_t stream_handle);
+```
+
+Starts a new transcription session on the stream.
+
+<ParamField path="transcriber_handle" type="int32_t" required>
+  Transcriber handle
+</ParamField>
+
+<ParamField path="stream_handle" type="int32_t" required>
+  Stream handle
+</ParamField>
+
+<ResponseField name="return" type="int32_t">
+  `MOONSHINE_ERROR_NONE` on success, error code on failure
+</ResponseField>
+
+<Note>
+Clears any previous transcript data. Call this after audio input discontinuities (e.g., when user unmutes).
+</Note>
+
+### moonshine_stop_stream
+
+```c
+int32_t moonshine_stop_stream(int32_t transcriber_handle, int32_t stream_handle);
+```
+
+Stops the current transcription session.
+
+<ParamField path="transcriber_handle" type="int32_t" required>
+  Transcriber handle
+</ParamField>
+
+<ParamField path="stream_handle" type="int32_t" required>
+  Stream handle
+</ParamField>
+
+<ResponseField name="return" type="int32_t">
+  `MOONSHINE_ERROR_NONE` on success, error code on failure
+</ResponseField>
+
+<Note>
+Any active lines will be marked as complete. Call `moonshine_transcribe_stream()` after stopping to get final results.
+</Note>
+
+### moonshine_transcribe_add_audio_to_stream
+
+```c
+int32_t moonshine_transcribe_add_audio_to_stream(
+    int32_t transcriber_handle,
+    int32_t stream_handle,
+    const float *new_audio_data,
+    uint64_t audio_length,
+    int32_t sample_rate,
+    uint32_t flags);
+```
+
+Adds audio data to the stream buffer.
+
+<ParamField path="transcriber_handle" type="int32_t" required>
+  Transcriber handle
+</ParamField>
+
+<ParamField path="stream_handle" type="int32_t" required>
+  Stream handle
+</ParamField>
+
+<ParamField path="new_audio_data" type="const float*" required>
+  PCM audio samples (values between -1.0 and 1.0)
+</ParamField>
+
+<ParamField path="audio_length" type="uint64_t" required>
+  Number of samples
+</ParamField>
+
+<ParamField path="sample_rate" type="int32_t" required>
+  Sample rate in Hz
+</ParamField>
+
+<ParamField path="flags" type="uint32_t">
+  Reserved (pass 0)
+</ParamField>
+
+<ResponseField name="return" type="int32_t">
+  `MOONSHINE_ERROR_NONE` on success, error code on failure
+</ResponseField>
+
+<Note>
+This function only buffers audio and does not perform transcription. Call `moonshine_transcribe_stream()` to get results. Safe to call from time-critical threads.
+</Note>
+
+### moonshine_transcribe_stream
+
+```c
+int32_t moonshine_transcribe_stream(
+    int32_t transcriber_handle,
+    int32_t stream_handle,
+    uint32_t flags,
+    struct transcript_t **out_transcript);
+```
+
+Analyzes buffered audio and returns updated transcript.
+
+<ParamField path="transcriber_handle" type="int32_t" required>
+  Transcriber handle
+</ParamField>
+
+<ParamField path="stream_handle" type="int32_t" required>
+  Stream handle
+</ParamField>
+
+<ParamField path="flags" type="uint32_t">
+  Bitwise OR of flags:
+  - `MOONSHINE_FLAG_FORCE_UPDATE`: Force analysis even if < 200ms of new audio
+</ParamField>
+
+<ParamField path="out_transcript" type="transcript_t**" required>
+  Pointer to receive updated transcript
+</ParamField>
+
+<ResponseField name="return" type="int32_t">
+  `MOONSHINE_ERROR_NONE` on success, error code on failure
+</ResponseField>
+
+<Note>
+By default, full analysis only occurs if 200ms+ of new audio has been added. Use `MOONSHINE_FLAG_FORCE_UPDATE` to override this throttling.
+</Note>
+
+**Example:**
+
+```c
+while (audio_available) {
+  moonshine_transcribe_add_audio_to_stream(
+    transcriber, stream, audio_chunk, chunk_size, 16000, 0);
+  
+  transcript_t *transcript = NULL;
+  moonshine_transcribe_stream(transcriber, stream, 0, &transcript);
+  
+  // Check for new or updated lines
+  for (size_t i = 0; i < transcript->line_count; i++) {
+    if (transcript->lines[i].is_new || transcript->lines[i].has_text_changed) {
+      printf("Updated: %s\n", transcript->lines[i].text);
+    }
+  }
+}
+```
+
+## Intent Recognition Functions
+
+### moonshine_create_intent_recognizer
+
+```c
+int32_t moonshine_create_intent_recognizer(
+    const char *model_path,
+    uint32_t model_arch,
+    const char *model_variant,
+    float threshold);
+```
+
+Creates an intent recognizer for voice command matching.
+
+<ParamField path="model_path" type="const char*" required>
+  Path to directory containing embedding model files
+</ParamField>
+
+<ParamField path="model_arch" type="uint32_t" required>
+  Model architecture (currently only `MOONSHINE_EMBEDDING_MODEL_ARCH_GEMMA_300M` supported)
+</ParamField>
+
+<ParamField path="model_variant" type="const char*">
+  Model quantization: "fp32", "fp16", "q8", "q4", "q4f16" (NULL defaults to "q4")
+</ParamField>
+
+<ParamField path="threshold" type="float">
+  Minimum similarity score (0.0-1.0) to trigger intent (default 0.7)
+</ParamField>
+
+<ResponseField name="return" type="int32_t">
+  Non-negative recognizer handle on success, negative error code on failure
+</ResponseField>
+
+### moonshine_free_intent_recognizer
+
+```c
+void moonshine_free_intent_recognizer(int32_t intent_recognizer_handle);
+```
+
+Frees intent recognizer resources.
+
+<ParamField path="intent_recognizer_handle" type="int32_t" required>
+  Intent recognizer handle
+</ParamField>
+
+### moonshine_register_intent
+
+```c
+int32_t moonshine_register_intent(
+    int32_t intent_recognizer_handle,
+    const char *trigger_phrase,
+    moonshine_intent_callback callback,
+    void *user_data);
+```
+
+Registers an intent with a trigger phrase and callback.
+
+<ParamField path="intent_recognizer_handle" type="int32_t" required>
+  Intent recognizer handle
+</ParamField>
+
+<ParamField path="trigger_phrase" type="const char*" required>
+  Phrase to match (e.g., "Turn on the lights")
+</ParamField>
+
+<ParamField path="callback" type="moonshine_intent_callback" required>
+  Function to call when intent is triggered
+</ParamField>
+
+<ParamField path="user_data" type="void*">
+  User data passed to callback (can be NULL)
+</ParamField>
+
+<ResponseField name="return" type="int32_t">
+  `MOONSHINE_ERROR_NONE` on success, error code on failure
+</ResponseField>
+
+**Example:**
+
+```c
+void on_lights_on(void *user_data, const char *trigger, 
+                  const char *utterance, float similarity) {
+  printf("Turning on lights (%.0f%% match)\n", similarity * 100);
+  // Actually turn on lights...
+}
+
+moonshine_register_intent(recognizer, "Turn on the lights", 
+                         on_lights_on, NULL);
+```
+
+### moonshine_unregister_intent
+
+```c
+int32_t moonshine_unregister_intent(
+    int32_t intent_recognizer_handle,
+    const char *trigger_phrase);
+```
+
+Removes a registered intent.
+
+<ParamField path="intent_recognizer_handle" type="int32_t" required>
+  Intent recognizer handle
+</ParamField>
+
+<ParamField path="trigger_phrase" type="const char*" required>
+  Trigger phrase to remove
+</ParamField>
+
+<ResponseField name="return" type="int32_t">
+  `MOONSHINE_ERROR_NONE` on success, error code on failure
+</ResponseField>
+
+### moonshine_process_utterance
+
+```c
+int32_t moonshine_process_utterance(
+    int32_t intent_recognizer_handle,
+    const char *utterance);
+```
+
+Processes an utterance and invokes matching intent callback.
+
+<ParamField path="intent_recognizer_handle" type="int32_t" required>
+  Intent recognizer handle
+</ParamField>
+
+<ParamField path="utterance" type="const char*" required>
+  Utterance to match against registered intents
+</ParamField>
+
+<ResponseField name="return" type="int32_t">
+  1 if intent recognized, 0 if not, negative error code on failure
+</ResponseField>
+
+### moonshine_set_intent_threshold
+
+```c
+int32_t moonshine_set_intent_threshold(
+    int32_t intent_recognizer_handle,
+    float threshold);
+```
+
+Sets the similarity threshold for intent matching.
+
+<ParamField path="intent_recognizer_handle" type="int32_t" required>
+  Intent recognizer handle
+</ParamField>
+
+<ParamField path="threshold" type="float" required>
+  New threshold (0.0-1.0)
+</ParamField>
+
+<ResponseField name="return" type="int32_t">
+  `MOONSHINE_ERROR_NONE` on success, error code on failure
+</ResponseField>
+
+### moonshine_get_intent_threshold
+
+```c
+float moonshine_get_intent_threshold(int32_t intent_recognizer_handle);
+```
+
+Gets the current similarity threshold.
+
+<ParamField path="intent_recognizer_handle" type="int32_t" required>
+  Intent recognizer handle
+</ParamField>
+
+<ResponseField name="return" type="float">
+  Current threshold (>= 0) on success, negative error code on failure
+</ResponseField>
+
+### moonshine_get_intent_count
+
+```c
+int32_t moonshine_get_intent_count(int32_t intent_recognizer_handle);
+```
+
+Gets the number of registered intents.
+
+<ParamField path="intent_recognizer_handle" type="int32_t" required>
+  Intent recognizer handle
+</ParamField>
+
+<ResponseField name="return" type="int32_t">
+  Number of intents (>= 0) on success, negative error code on failure
+</ResponseField>
+
+### moonshine_clear_intents
+
+```c
+int32_t moonshine_clear_intents(int32_t intent_recognizer_handle);
+```
+
+Removes all registered intents.
+
+<ParamField path="intent_recognizer_handle" type="int32_t" required>
+  Intent recognizer handle
+</ParamField>
+
+<ResponseField name="return" type="int32_t">
+  `MOONSHINE_ERROR_NONE` on success, error code on failure
+</ResponseField>
+
+## Streaming Guarantees
+
+When using streaming transcription, the library provides these guarantees:
+
+1. **Lines are never removed** - only added
+2. **Only the last line may be incomplete** - all others are finalized
+3. **Line IDs are stable** - use them to track lines across updates
+4. **Empty strings indicate detected speech with no transcription**
+5. **Line indexes are stable references** - remember `line_count` to process only new lines
+6. **Speaker IDs are set when confident** - or when line completes
+
+## Best Practices
+
+### Memory Management
+
+<Warning>
+Always copy transcript data before:
+- Making another API call on the same transcriber
+- Freeing the transcriber
+
+The library owns all returned transcript memory.
+</Warning>
+
+### Performance
+
+- Use 16kHz audio to avoid resampling overhead
+- For streaming, call `moonshine_transcribe_stream()` at intervals matching your latency requirements (e.g., every 500ms)
+- Add audio in whatever chunk sizes your audio source provides - the library handles buffering
+- Use multiple streams on one transcriber to share model resources across audio sources
+
+### Error Handling
+
+```c
+int32_t result = moonshine_create_stream(transcriber, 0);
+if (result < 0) {
+  fprintf(stderr, "Stream creation failed: %s\n", 
+          moonshine_error_to_string(result));
+  return;
+}
+int32_t stream_handle = result;
+```
+
+## See Also
+
+<CardGroup cols={2}>
+  <Card title="C API Overview" icon="book" href="/api/c/overview">
+    High-level concepts and architecture
+  </Card>
+  <Card title="Python API" icon="python" href="/api/python/overview">
+    Higher-level Python bindings (recommended)
+  </Card>
+</CardGroup>

@@ -1,0 +1,345 @@
+---
+title: IntentRecognizer
+description: Semantic intent matching for voice commands
+---
+
+The `IntentRecognizer` class uses sentence embeddings to match user utterances against registered command phrases, enabling natural language voice command recognition.
+
+## Class Definition
+
+```python
+from moonshine_voice import IntentRecognizer, EmbeddingModelArch
+
+recognizer = IntentRecognizer(
+    model_path: str,
+    model_arch: EmbeddingModelArch = EmbeddingModelArch.GEMMA_300M,
+    model_variant: str = "q4",
+    threshold: float = 0.7
+)
+```
+
+## Constructor Parameters
+
+<ParamField path="model_path" type="str" required>
+  Path to the directory containing embedding model files (gemma-300m model and tokenizer.bin)
+</ParamField>
+
+<ParamField path="model_arch" type="EmbeddingModelArch" default="EmbeddingModelArch.GEMMA_300M">
+  Embedding model architecture. Currently only `GEMMA_300M` is supported.
+</ParamField>
+
+<ParamField path="model_variant" type="str" default="q4">
+  Model quantization variant:
+  - `"fp32"` - Full precision (largest, most accurate)
+  - `"fp16"` - Half precision
+  - `"q8"` - 8-bit quantized
+  - `"q4"` - 4-bit quantized (recommended, best performance/accuracy)
+  - `"q4f16"` - 4-bit weights, fp16 activations
+</ParamField>
+
+<ParamField path="threshold" type="float" default="0.7">
+  Minimum similarity score (0.0-1.0) to trigger an intent. Higher values are more restrictive.
+  - `0.6` - Very permissive, more false positives
+  - `0.7` - Balanced (recommended)
+  - `0.8` - Strict, fewer false positives
+</ParamField>
+
+## Methods
+
+### register_intent
+
+Register a command phrase and its handler.
+
+```python
+recognizer.register_intent(
+    trigger_phrase: str,
+    handler: Callable[[str, str, float], None]
+)
+```
+
+<ParamField path="trigger_phrase" type="str" required>
+  The canonical command phrase (e.g., "turn on the lights")
+</ParamField>
+
+<ParamField path="handler" type="Callable" required>
+  Function called when the intent is triggered. Receives:
+  - `trigger_phrase` (str) - The registered command phrase
+  - `utterance` (str) - The actual user's words
+  - `similarity` (float) - Confidence score 0.0-1.0
+</ParamField>
+
+**Example:**
+
+```python
+def on_lights_on(trigger, utterance, similarity):
+    print(f"Turning on lights (confidence: {similarity:.0%})")
+    # Control smart home API here
+
+recognizer.register_intent("turn on the lights", on_lights_on)
+```
+
+### unregister_intent
+
+Remove a registered intent.
+
+```python
+recognizer.unregister_intent(trigger_phrase: str)
+```
+
+<ParamField path="trigger_phrase" type="str" required>
+  The command phrase to remove (must match exactly as registered)
+</ParamField>
+
+### process_utterance
+
+Manually process an utterance against all registered intents.
+
+```python
+recognizer.process_utterance(utterance: str)
+```
+
+<ParamField path="utterance" type="str" required>
+  The text to match against registered intents
+</ParamField>
+
+This checks the utterance against all registered intents and calls handlers for any matches above the threshold.
+
+### set_threshold
+
+Change the similarity threshold.
+
+```python
+recognizer.set_threshold(threshold: float)
+```
+
+<ParamField path="threshold" type="float" required>
+  New threshold value (0.0-1.0)
+</ParamField>
+
+### get_threshold
+
+Get the current threshold.
+
+```python
+threshold = recognizer.get_threshold() -> float
+```
+
+**Returns:** Current threshold value
+
+### get_intent_count
+
+Get the number of registered intents.
+
+```python
+count = recognizer.get_intent_count() -> int
+```
+
+**Returns:** Number of registered intents
+
+### clear_intents
+
+Remove all registered intents.
+
+```python
+recognizer.clear_intents()
+```
+
+## Usage as Event Listener
+
+`IntentRecognizer` implements `TranscriptEventListener`, so you can attach it to a transcriber:
+
+```python
+from moonshine_voice import MicTranscriber, IntentRecognizer
+
+# Create transcriber
+transcriber = MicTranscriber(
+    model_path="/path/to/asr/models"
+)
+
+# Create intent recognizer
+recognizer = IntentRecognizer(
+    model_path="/path/to/embedding/models"
+)
+
+# Register commands
+recognizer.register_intent(
+    "turn on the lights",
+    lambda t, u, s: print("Lights ON")
+)
+
+recognizer.register_intent(
+    "turn off the lights",
+    lambda t, u, s: print("Lights OFF")
+)
+
+# Attach to transcriber - now intents are detected automatically
+transcriber.add_listener(recognizer)
+
+transcriber.start()
+# Speak: "Please turn on the lights" -> Triggers "Lights ON"
+```
+
+## Example: Smart Home Control
+
+```python
+from moonshine_voice import MicTranscriber, IntentRecognizer
+
+class SmartHome:
+    def __init__(self):
+        self.lights_on = False
+    
+    def lights_on_handler(self, trigger, utterance, similarity):
+        self.lights_on = True
+        print(f"✓ Lights ON ({similarity:.0%} match)")
+    
+    def lights_off_handler(self, trigger, utterance, similarity):
+        self.lights_on = False
+        print(f"✓ Lights OFF ({similarity:.0%} match)")
+    
+    def temperature_handler(self, trigger, utterance, similarity):
+        # This is a simplified example
+        # In practice, you'd parse the number from the utterance
+        print(f"Setting temperature ({similarity:.0%} match)")
+
+# Set up smart home
+home = SmartHome()
+
+# Create recognizer
+recognizer = IntentRecognizer(
+    model_path="/path/to/embedding/models",
+    threshold=0.65  # More permissive for casual speech
+)
+
+# Register intents
+recognizer.register_intent("turn on the lights", home.lights_on_handler)
+recognizer.register_intent("turn off the lights", home.lights_off_handler)
+recognizer.register_intent("set temperature to 72", home.temperature_handler)
+
+# Attach to transcriber
+transcriber = MicTranscriber(model_path="/path/to/asr/models")
+transcriber.add_listener(recognizer)
+
+print("Smart home voice control ready")
+transcriber.start()
+```
+
+Now you can say:
+- "Please turn on the lights" → Matches "turn on the lights"
+- "Switch off the lights" → Matches "turn off the lights"
+- "Make it 72 degrees" → Matches "set temperature to 72"
+
+## Example: Dynamic Commands
+
+```python
+from moonshine_voice import IntentRecognizer
+
+recognizer = IntentRecognizer(model_path="/path/to/models")
+
+# Robot movement commands
+commands = [
+    "move forward",
+    "move backward",
+    "turn left",
+    "turn right",
+    "stop moving"
+]
+
+def robot_handler(trigger, utterance, similarity):
+    print(f"Command: {trigger}")
+    print(f"User said: {utterance}")
+    print(f"Confidence: {similarity:.0%}")
+    # Send command to robot here
+
+# Register all commands with same handler
+for command in commands:
+    recognizer.register_intent(command, robot_handler)
+
+print(f"Registered {recognizer.get_intent_count()} commands")
+
+# Test
+recognizer.process_utterance("go forward")  # Matches "move forward"
+recognizer.process_utterance("go backwards")  # Matches "move backward"
+```
+
+## Semantic Matching
+
+Unlike exact keyword matching, the intent recognizer understands semantic similarity:
+
+```python
+recognizer.register_intent("turn on the lights", handler)
+
+# These all match:
+recognizer.process_utterance("turn on the lights")     # 100% match
+recognizer.process_utterance("switch on the lights")   # ~95% match
+recognizer.process_utterance("lights on please")       # ~90% match
+recognizer.process_utterance("enable the lights")      # ~85% match
+recognizer.process_utterance("illuminate the room")    # ~75% match
+
+# These don't match (below threshold):
+recognizer.process_utterance("turn off the lights")    # Opposite meaning
+recognizer.process_utterance("what time is it")        # Unrelated
+```
+
+## Threshold Tuning
+
+<Accordion title="How to choose the right threshold">
+  **Threshold 0.6**: Very permissive
+  - More false positives
+  - Good for casual, varied language
+  - Use when: Users speak naturally, informally
+  
+  **Threshold 0.7**: Balanced (recommended)
+  - Good accuracy with flexibility
+  - Handles most variations
+  - Use when: General voice command systems
+  
+  **Threshold 0.8**: Strict
+  - Fewer false positives
+  - Requires closer matches
+  - Use when: Safety-critical commands, confirmation required
+</Accordion>
+
+## Command-Line Usage
+
+```bash
+python -m moonshine_voice.intent_recognizer \
+  --intents "turn left, turn right, stop, go forward"
+```
+
+<Accordion title="Command-line options">
+  - `--intents` - Comma-separated list of command phrases
+  - `--embedding-model` - Path to embedding model
+  - `--quantization` - Model variant (fp32, fp16, q8, q4, q4f16)
+  - `--threshold` - Similarity threshold (0.0-1.0)
+  - `--language` - ASR language for transcription
+</Accordion>
+
+## Performance
+
+| Model Variant | Size | Latency | Accuracy |
+|---------------|------|---------|----------|
+| fp32 | 1.2 GB | 50ms | Best |
+| fp16 | 600 MB | 40ms | Excellent |
+| q8 | 300 MB | 30ms | Very good |
+| q4 (recommended) | 150 MB | 25ms | Good |
+| q4f16 | 200 MB | 28ms | Very good |
+
+<Tip>
+  Use `q4` variant for best balance of speed, size, and accuracy.
+</Tip>
+
+## Limitations
+
+<Warning>
+  The current implementation matches **full phrases**, not individual words or slots. For "set temperature to 72", you need to parse the number separately.
+</Warning>
+
+<Note>
+  Future versions will support "slot filling" to extract parameters like numbers, times, and names from utterances.
+</Note>
+
+## See Also
+
+- [Command Recognition Guide](/guides/command-recognition) - Complete guide
+- [Data Structures](/api/python/data-structures) - IntentMatch structure
+- [Transcriber](/api/python/transcriber) - For integration with speech recognition

@@ -1,0 +1,231 @@
+---
+title: Support
+description: Get help with Moonshine Voice from the community and team
+---
+
+Need help with Moonshine Voice? We're here to support you!
+
+## Community Support
+
+### Discord Community
+
+Join our Discord for live chat with the team and community:
+
+<Card title="Join Discord" icon="discord" href="https://discord.gg/27qp9zSRXF">
+  Get live support, share your projects, and connect with other developers
+</Card>
+
+**Discord is best for**:
+- Quick questions
+- Real-time troubleshooting
+- Discussing ideas and use cases
+- Sharing your projects
+- Getting to know other users
+
+### GitHub
+
+The Moonshine Voice repository is the central hub for code, issues, and discussions.
+
+<CardGroup cols={2}>
+  <Card title="Report Issues" icon="github" href="https://github.com/moonshine-ai/moonshine/issues">
+    Report bugs, request features, or track known issues
+  </Card>
+  <Card title="Discussions" icon="comments" href="https://github.com/moonshine-ai/moonshine/discussions">
+    Ask questions, share ideas, and discuss with the community
+  </Card>
+</CardGroup>
+
+**GitHub Issues are best for**:
+- Reporting bugs with detailed reproduction steps
+- Requesting new features
+- Tracking progress on existing issues
+
+**GitHub Discussions are best for**:
+- General questions about using Moonshine
+- Sharing your use cases and projects
+- Discussing potential features before opening issues
+- Getting feedback on implementation approaches
+
+## Documentation
+
+Explore our comprehensive documentation:
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart/overview">
+    Get started with Moonshine Voice in minutes
+  </Card>
+  <Card title="Examples" icon="code" href="/resources/examples">
+    Browse examples for all supported platforms
+  </Card>
+  <Card title="API Reference" icon="book" href="/api/transcriber">
+    Detailed API documentation
+  </Card>
+  <Card title="FAQ" icon="question" href="/resources/faq">
+    Answers to common questions
+  </Card>
+</CardGroup>
+
+## Email Support
+
+For private inquiries, partnerships, or commercial licensing:
+
+<Card title="Contact Us" icon="envelope" href="mailto:contact@moonshine.ai">
+  contact@moonshine.ai
+</Card>
+
+**Email us for**:
+- Commercial licensing inquiries (revenue > $1M USD/year)
+- Custom model training and domain customization
+- Partnership opportunities
+- Private or sensitive issues
+- Press and media inquiries
+
+## Commercial Services
+
+Moonshine AI offers commercial services for organizations with specialized needs:
+
+### Custom Model Training
+
+Need models optimized for your domain?
+- Industry-specific vocabulary and terminology
+- Accent or dialect specialization
+- Custom languages or language variants
+- Higher accuracy for your use case
+
+[Contact us about custom training](mailto:contact@moonshine.ai)
+
+### Enterprise Licensing
+
+Organizations generating over $1,000,000 USD in annual revenue need an enterprise license to use non-English models commercially.
+
+<Card title="Enterprise Licensing" icon="building" href="https://moonshine.ai/enterprise">
+  Request an enterprise license
+</Card>
+
+### Technical Support
+
+- Dedicated support for your team
+- Architecture and integration consulting
+- Performance optimization
+- Custom feature development
+
+[Contact us about enterprise support](mailto:contact@moonshine.ai)
+
+## Before You Ask
+
+To get the fastest help, please:
+
+### 1. Check Existing Resources
+
+- Search the [FAQ](/resources/faq)
+- Browse the [Examples](/resources/examples)
+- Check [GitHub Issues](https://github.com/moonshine-ai/moonshine/issues) for similar problems
+- Review the [API documentation](/api/transcriber)
+
+### 2. Gather Information
+
+When asking for help, include:
+
+- **What you're trying to do**: Your goal or use case
+- **What you tried**: Code snippets or steps you took
+- **What happened**: Error messages, unexpected behavior
+- **Your environment**:
+  - Operating system and version
+  - Moonshine Voice version
+  - Programming language and version
+  - Platform (iOS, Android, Raspberry Pi, etc.)
+
+### 3. Provide Minimal Reproduction
+
+If possible, create a minimal example that reproduces the issue:
+
+```python
+# Example: Minimal reproduction of transcription issue
+from moonshine_voice import Transcriber, load_wav_file, get_model_for_language
+
+model_path, model_arch = get_model_for_language("en")
+transcriber = Transcriber(model_path=model_path, model_arch=model_arch)
+
+audio_data, sample_rate = load_wav_file("my_file.wav")
+transcript = transcriber.transcribe_without_streaming(audio_data, sample_rate)
+
+print(transcript.lines[0].text)  # Prints unexpected result
+```
+
+## Contributing
+
+Want to contribute to Moonshine Voice?
+
+<Card title="Contributing Guide" icon="code-branch" href="/resources/contributing">
+  Learn how to contribute code, documentation, or examples
+</Card>
+
+Contributions welcome:
+- Bug fixes
+- New features
+- Documentation improvements
+- Examples and tutorials
+- Testing and bug reports
+
+## Community Guidelines
+
+When participating in the Moonshine community:
+
+- **Be respectful**: Treat everyone with kindness and respect
+- **Be constructive**: Focus on helping others and improving the project
+- **Be patient**: Remember that maintainers and helpers are volunteers
+- **Be clear**: Provide context and details when asking questions
+- **Give back**: Help others when you can
+
+## Stay Updated
+
+Keep up with Moonshine Voice development:
+
+- **GitHub**: [Watch the repository](https://github.com/moonshine-ai/moonshine) for updates
+- **Discord**: Join announcements channel for release news
+- **Website**: [moonshine.ai](https://moonshine.ai) for blog posts and updates
+
+## Resources
+
+<CardGroup cols={2}>
+  <Card title="GitHub Repository" icon="github" href="https://github.com/moonshine-ai/moonshine">
+    Source code and releases
+  </Card>
+  <Card title="Discord Community" icon="discord" href="https://discord.gg/27qp9zSRXF">
+    Live chat and support
+  </Card>
+  <Card title="PyPI Package" icon="python" href="https://pypi.org/project/moonshine-voice/">
+    Python package on PyPI
+  </Card>
+  <Card title="HuggingFace Models" icon="brain" href="https://huggingface.co/UsefulSensors/models">
+    Pre-trained models
+  </Card>
+  <Card title="Research Papers" icon="file-lines" href="https://arxiv.org/abs/2602.12241">
+    Academic publications
+  </Card>
+  <Card title="YouTube" icon="youtube" href="https://www.youtube.com/watch?v=WH-AGvHmtoM">
+    Video tutorials and demos
+  </Card>
+</CardGroup>
+
+## Response Times
+
+**Discord**: Usually within hours during business hours (Pacific Time)
+
+**GitHub Issues**: Within 1-3 business days
+
+**Email**: Within 2-5 business days for general inquiries, faster for enterprise customers
+
+Please be patient - we're a small team working hard to support the community!
+
+## Thank You
+
+Thank you for using Moonshine Voice! We're excited to see what you build.
+
+If Moonshine Voice helps your project, consider:
+- Starring the [GitHub repository](https://github.com/moonshine-ai/moonshine)
+- Sharing your project with the community
+- Contributing back to the project
+- Spreading the word about Moonshine Voice
+
+Your support helps us continue improving Moonshine Voice for everyone!

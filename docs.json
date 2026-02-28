@@ -1,122 +1,142 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
-  "name": "Mint Starter Kit",
+  "name": "Moonshine Voice",
+  "theme": "aspen",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#4F46E5",
+    "light": "#818CF8",
+    "dark": "#3730A3"
   },
-  "favicon": "/favicon.svg",
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/moonshine-ai/moonshine"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/moonshine-ai/moonshine",
+      "discord": "https://discord.gg/27qp9zSRXF"
+    }
+  },
   "navigation": {
     "tabs": [
       {
-        "tab": "Guides",
+        "tab": "Documentation",
         "groups": [
           {
-            "group": "Getting started",
+            "group": "Get Started",
             "pages": [
-              "index",
+              "introduction",
               "quickstart",
-              "development"
+              "installation"
             ]
           },
           {
-            "group": "Customization",
+            "group": "Core Concepts",
             "pages": [
-              "essentials/settings",
-              "essentials/navigation"
+              "concepts/architecture",
+              "concepts/transcription",
+              "concepts/streaming",
+              "concepts/intent-recognition",
+              "concepts/models"
             ]
           },
           {
-            "group": "Writing content",
+            "group": "Platform Guides",
             "pages": [
-              "essentials/markdown",
-              "essentials/code",
-              "essentials/images",
-              "essentials/reusable-snippets"
+              "platforms/python",
+              "platforms/ios",
+              "platforms/android",
+              "platforms/macos",
+              "platforms/linux",
+              "platforms/windows",
+              "platforms/raspberry-pi"
             ]
           },
           {
-            "group": "AI tools",
+            "group": "Guides",
             "pages": [
-              "ai-tools/cursor",
-              "ai-tools/claude-code",
-              "ai-tools/windsurf"
+              "guides/transcription",
+              "guides/mic-transcription",
+              "guides/command-recognition",
+              "guides/streaming",
+              "guides/speaker-identification",
+              "guides/downloading-models",
+              "guides/debugging"
+            ]
+          },
+          {
+            "group": "Models",
+            "pages": [
+              "models/overview",
+              "models/available-models",
+              "models/benchmarks",
+              "models/customization"
             ]
           }
         ]
       },
       {
-        "tab": "API reference",
+        "tab": "API Reference",
         "groups": [
           {
-            "group": "API documentation",
+            "group": "Python API",
             "pages": [
-              "api-reference/introduction"
+              "api/python/transcriber",
+              "api/python/mic-transcriber",
+              "api/python/stream",
+              "api/python/intent-recognizer",
+              "api/python/data-structures",
+              "api/python/events"
             ]
           },
           {
-            "group": "Endpoint examples",
+            "group": "Swift API",
             "pages": [
-              "api-reference/endpoint/get",
-              "api-reference/endpoint/create",
-              "api-reference/endpoint/delete",
-              "api-reference/endpoint/webhook"
+              "api/swift/transcriber",
+              "api/swift/mic-transcriber",
+              "api/swift/data-structures"
+            ]
+          },
+          {
+            "group": "Java API",
+            "pages": [
+              "api/java/transcriber",
+              "api/java/data-structures"
+            ]
+          },
+          {
+            "group": "C++ API",
+            "pages": [
+              "api/cpp/transcriber",
+              "api/cpp/data-structures"
+            ]
+          },
+          {
+            "group": "C API",
+            "pages": [
+              "api/c/overview",
+              "api/c/functions"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Resources",
+        "groups": [
+          {
+            "group": "Additional Resources",
+            "pages": [
+              "resources/examples",
+              "resources/building-from-source",
+              "resources/contributing",
+              "resources/faq",
+              "resources/support"
             ]
           }
         ]
       }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
-  },
-  "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
-  },
-  "navbar": {
-    "links": [
-      {
-        "label": "Support",
-        "href": "mailto:hi@mintlify.com"
-      }
-    ],
-    "primary": {
-      "type": "button",
-      "label": "Dashboard",
-      "href": "https://dashboard.mintlify.com"
-    }
-  },
-  "contextual": {
-    "options": [
-     "copy",
-     "view",
-     "chatgpt",
-     "claude",
-     "perplexity",
-     "mcp",
-     "cursor",
-     "vscode"
-   ]
-  },
-  "footer": {
-    "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
-    }
+    ]
   }
 }

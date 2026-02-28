@@ -1,0 +1,204 @@
+---
+title: MicTranscriber
+description: Transcriber with built-in microphone capture
+---
+
+The `MicTranscriber` class extends `Transcriber` with automatic microphone audio capture, making it easy to transcribe live speech from the system's default microphone.
+
+## Class Definition
+
+```python
+from moonshine_voice import MicTranscriber, ModelArch
+
+mic_transcriber = MicTranscriber(
+    model_path: str,
+    model_arch: ModelArch = ModelArch.BASE,
+    update_interval: float = 0.5,
+    options: dict = None,
+    device: int = None,
+    sample_rate: int = 16000,
+    channels: int = 1,
+    blocksize: int = 1024
+)
+```
+
+## Constructor Parameters
+
+Inherits all `Transcriber` parameters plus:
+
+<ParamField path="device" type="int" default="None">
+  Audio input device index. `None` uses the system default microphone.
+  
+  Use `sounddevice.query_devices()` to list available devices.
+</ParamField>
+
+<ParamField path="sample_rate" type="int" default="16000">
+  Microphone sample rate in Hz. 16000 is optimal for Moonshine models.
+</ParamField>
+
+<ParamField path="channels" type="int" default="1">
+  Number of audio channels. Must be 1 (mono) for Moonshine.
+</ParamField>
+
+<ParamField path="blocksize" type="int" default="1024">
+  Audio buffer size in samples. Smaller values reduce latency but may cause audio dropouts.
+</ParamField>
+
+## Methods
+
+Inherits all `Transcriber` methods. The `start()` and `stop()` methods automatically handle microphone capture:
+
+### start
+
+Begin microphone capture and transcription.
+
+```python
+mic_transcriber.start()
+```
+
+Opens the audio input device and starts feeding audio to the transcriber. Audio is captured continuously until `stop()` is called.
+
+### stop
+
+Stop microphone capture and end the session.
+
+```python
+mic_transcriber.stop()
+```
+
+Closes the audio device and finalizes the transcript.
+
+## Example: Basic Microphone Transcription
+
+```python
+from moonshine_voice import MicTranscriber, ModelArch, TranscriptEventListener
+
+class PrintListener(TranscriptEventListener):
+    def on_line_text_changed(self, event):
+        # Print updates as they come
+        print(f"\r{event.line.text}", end="", flush=True)
+    
+    def on_line_completed(self, event):
+        # Print final version on new line
+        print(f"\n{event.line.text}")
+
+mic_transcriber = MicTranscriber(
+    model_path="/path/to/models",
+    model_arch=ModelArch.TINY_STREAMING
+)
+
+mic_transcriber.add_listener(PrintListener())
+
+print("Listening... Press Ctrl+C to stop")
+try:
+    mic_transcriber.start()
+    while True:
+        pass  # Keep running
+except KeyboardInterrupt:
+    mic_transcriber.stop()
+    print("\nStopped")
+```
+
+## Example: Selecting Audio Device
+
+```python
+import sounddevice as sd
+from moonshine_voice import MicTranscriber
+
+# List available devices
+print(sd.query_devices())
+
+# Use device index 2
+mic_transcriber = MicTranscriber(
+    model_path="/path/to/models",
+    device=2,
+    sample_rate=44100  # Device's native sample rate
+)
+```
+
+## Command-Line Usage
+
+You can run the MicTranscriber directly from the command line:
+
+```bash
+python -m moonshine_voice.mic_transcriber --language en
+```
+
+<Accordion title="Command-line options">
+  - `--language` - Language code (en, es, ar, ja, ko, zh, uk, vi)
+  - `--model-arch` - Model architecture (0-5)
+  - `--model-path` - Path to model files
+  - `--device` - Audio device index
+  - `--sample-rate` - Sample rate (default: 16000)
+  - `--update-interval` - Update interval in seconds
+  - `--options` - JSON string of advanced options
+</Accordion>
+
+## Audio Processing Pipeline
+
+The `MicTranscriber` handles the complete audio pipeline:
+
+1. **Capture** - sounddevice captures audio from microphone
+2. **Buffer** - Audio chunks are buffered
+3. **Feed** - Chunks are fed to the transcriber via `add_audio()`
+4. **Process** - VAD, segmentation, and transcription happen automatically
+5. **Events** - Listeners receive updates as speech is recognized
+
+```mermaid
+graph LR
+    A[Microphone] --> B[sounddevice]
+    B --> C[Audio Buffer]
+    C --> D[Transcriber]
+    D --> E[Event Listeners]
+```
+
+## Configuration Tips
+
+<Tip>
+  Use `ModelArch.TINY_STREAMING` for lowest latency on resource-constrained devices.
+</Tip>
+
+<Warning>
+  Set `channels=1` (mono). Moonshine doesn't support stereo input.
+</Warning>
+
+<Note>
+  If you experience audio dropouts, increase `blocksize` to 2048 or 4096.
+</Note>
+
+## Permissions
+
+<Info>
+  Microphone access requires user permission on most platforms:
+  - **macOS**: Add microphone usage description to Info.plist
+  - **Windows**: Ensure microphone privacy settings allow access
+  - **Linux**: User must be in `audio` group
+</Info>
+
+## Troubleshooting
+
+<Accordion title="No audio detected">
+  1. Check microphone is working with other apps
+  2. Verify correct device index with `sounddevice.query_devices()`
+  3. Check VAD threshold - try lowering it:
+     ```python
+     options = {"vad_threshold": "0.3"}
+     ```
+  4. Enable debug logging:
+     ```python
+     options = {"log_output_text": "true"}
+     ```
+</Accordion>
+
+<Accordion title="Audio dropouts / glitches">
+  1. Increase blocksize: `blocksize=2048`
+  2. Close other audio applications
+  3. Check system CPU usage
+  4. Try a lower sample rate: `sample_rate=8000`
+</Accordion>
+
+## See Also
+
+- [Transcriber](/api/python/transcriber) - Base transcriber class
+- [Events](/api/python/events) - Event listener interface
+- [Microphone Transcription Guide](/guides/mic-transcription) - Complete guide

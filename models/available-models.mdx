@@ -1,0 +1,122 @@
+---
+title: Available Models
+description: Languages, architectures, and accuracy metrics for Moonshine models
+---
+
+Moonshine Voice supports multiple languages with models optimized for different deployment scenarios. All models use the ONNX format converted to memory-mappable OnnxRuntime (`.ort`) flatbuffer encoding.
+
+## Supported Languages and Models
+
+| Language   | Architecture     | Parameters   | WER/CER | HuggingFace Link |
+| ---------- | ---------------- | ------------ | ------- | ---------------- |
+| English    | Tiny             | 26 million   | 12.66%  | [Model](https://huggingface.co/UsefulSensors/models) |
+| English    | Tiny Streaming   | 34 million   | 12.00%  | [Model](https://huggingface.co/UsefulSensors/models) |
+| English    | Base             | 58 million   | 10.07%  | [Model](https://huggingface.co/UsefulSensors/models) |
+| English    | Small Streaming  | 123 million  | 7.84%   | [Model](https://huggingface.co/UsefulSensors/models) |
+| English    | Medium Streaming | 245 million  | 6.65%   | [Model](https://huggingface.co/UsefulSensors/models) |
+| Arabic     | Base             | 58 million   | 5.63%   | [Model](https://huggingface.co/UsefulSensors/models) |
+| Japanese   | Base             | 58 million   | 13.62%  | [Model](https://huggingface.co/UsefulSensors/models) |
+| Korean     | Tiny             | 26 million   | 6.46%   | [Model](https://huggingface.co/UsefulSensors/models) |
+| Mandarin   | Base             | 58 million   | 25.76%  | [Model](https://huggingface.co/UsefulSensors/models) |
+| Spanish    | Base             | 58 million   | 4.33%   | [Model](https://huggingface.co/UsefulSensors/models) |
+| Ukrainian  | Base             | 58 million   | 14.55%  | [Model](https://huggingface.co/UsefulSensors/models) |
+| Vietnamese | Base             | 58 million   | 8.82%   | [Model](https://huggingface.co/UsefulSensors/models) |
+
+<Note>
+**WER** (Word Error Rate) is used for languages with word boundaries like English and Spanish. **CER** (Character Error Rate) is used for languages without clear word boundaries.
+</Note>
+
+## Evaluation Methodology
+
+- **English models**: Evaluated using the [HuggingFace OpenASR Leaderboard](https://huggingface.co/spaces/hf-audio/open_asr_leaderboard) datasets and methodology
+- **Other languages**: Evaluated using the FLEURS dataset with the `scripts/eval-model-accuracy.py` script
+
+## Downloading Models
+
+The easiest way to get model files is using the Python module:
+
+```bash
+python -m moonshine_voice.download --language en
+```
+
+You can use either the two-letter code or the English name for the language:
+
+```bash
+# Examples
+python -m moonshine_voice.download --language spanish
+python -m moonshine_voice.download --language ja
+python -m moonshine_voice.download --language korean
+```
+
+### Specifying Model Architecture
+
+Optionally request a specific model architecture using the `model-arch` flag:
+
+```bash
+python -m moonshine_voice.download --language en --model-arch 5
+```
+
+Architecture numbers (from `moonshine-c-api.h`):
+- `0` - Tiny
+- `1` - Base
+- `2` - Tiny Streaming
+- `3` - Base Streaming
+- `4` - Small Streaming
+- `5` - Medium Streaming
+
+If no architecture is specified, the script loads the highest-quality model available for that language.
+
+### Download Output
+
+The download script will log the model location and architecture:
+
+```bash
+encoder_model.ort: 100%|███████████████████████| 29.9M/29.9M [00:00<00:00, 34.5MB/s]
+decoder_model_merged.ort: 100%|████████████████| 104M/104M [00:02<00:00, 52.6MB/s]
+tokenizer.bin: 100%|█████████████████████████████| 244k/244k [00:00<00:00, 1.44MB/s]
+Model download url: https://download.moonshine.ai/model/base-en/quantized/base-en
+Model components: ['encoder_model.ort', 'decoder_model_merged.ort', 'tokenizer.bin']
+Model arch: 1
+Downloaded model path: /Users/username/Library/Caches/moonshine_voice/download.moonshine.ai/model/base-en/quantized/base-en
+```
+
+<Info>
+By default, models are cached in your user cache directory (`~/Library/Caches/moonshine_voice` on macOS). Set the `MOONSHINE_VOICE_CACHE` environment variable to use a different location.
+</Info>
+
+## HuggingFace Models
+
+Safetensor versions of the models are available on HuggingFace at [huggingface.co/UsefulSensors/models](https://huggingface.co/UsefulSensors/models). These are floating-point checkpoints exported directly from the training pipeline.
+
+<Note>
+The organization name "UsefulSensors" is from an earlier incarnation of the company when they focused on complete voice interface solutions integrated onto low-cost chips with built-in microphones.
+</Note>
+
+## Non-Latin Language Configuration
+
+<Warning>
+For models that don't use the Latin alphabet (Arabic, Japanese, Korean, Mandarin, Vietnamese), you must set the `max_tokens_per_second` option to `13.0` when creating the transcriber.
+</Warning>
+
+This is required because:
+- Hallucination detection uses a heuristic based on tokens per second
+- Non-Latin languages produce more tokens per second due to tokenization
+- Without this setting, valid outputs may be incorrectly truncated
+
+```python
+transcriber = Transcriber(
+    model_path=model_path,
+    model_arch=model_arch,
+    options={"max_tokens_per_second": "13.0"}
+)
+```
+
+## Model Components
+
+Each model consists of three files:
+
+1. **encoder_model.ort** - Encoder neural network (processes audio features)
+2. **decoder_model_merged.ort** - Decoder neural network (generates text)
+3. **tokenizer.bin** - Token-to-character mapping in compact binary format
+
+All files must be present in the model directory for the transcriber to load successfully.

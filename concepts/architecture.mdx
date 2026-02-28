@@ -1,0 +1,231 @@
+---
+title: System Architecture
+description: Learn about Moonshine Voice's event-based architecture and how the components work together
+---
+
+## Overview
+
+Moonshine Voice is designed with a simple, event-based architecture that abstracts away the complexity of voice processing. The framework provides a high-level API that lets developers focus on building applications rather than managing audio pipelines.
+
+## Design Philosophy
+
+The basic flow is straightforward:
+
+1. Create a `Transcriber` or `IntentRecognizer` object
+2. Attach an `EventListener` that gets called when important events occur
+3. Feed in audio and respond to events
+
+<Info>
+  **Batteries Included**: Moonshine Voice includes all stages of the voice processing pipeline in a single library - microphone capture, voice activity detection, speech to text, speaker identification, and intent recognition.
+</Info>
+
+## Architecture Diagram
+
+Traditionally, adding a voice interface required integrating multiple libraries for different processing stages. Moonshine Voice consolidates these into one framework:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      Application Layer                      │
+│                 (Event Listeners & Handlers)                │
+└────────────────────────────┬────────────────────────────────┘
+                             │
+                    Events (LineStarted,
+                    LineTextChanged, etc.)
+                             │
+┌────────────────────────────┴────────────────────────────────┐
+│                   Moonshine Voice Library                    │
+├──────────────────────────────────────────────────────────────┤
+│  ┌──────────────┐  ┌─────────────┐  ┌──────────────────┐   │
+│  │  Microphone  │  │    VAD      │  │  Speech to Text  │   │
+│  │   Capture    │─▶│  (Silero)   │─▶│  (Moonshine ASR) │   │
+│  └──────────────┘  └─────────────┘  └──────────────────┘   │
+│                                              │               │
+│                                              ▼               │
+│  ┌──────────────┐  ┌─────────────────────────────────┐     │
+│  │   Speaker    │  │    Intent Recognition            │     │
+│  │     ID       │  │    (Semantic Embeddings)         │     │
+│  │ (Pyannote)   │  └─────────────────────────────────┘     │
+│  └──────────────┘                                           │
+└──────────────────────────────────────────────────────────────┘
+```
+
+## Core Components
+
+### Transcriber
+
+The `Transcriber` (defined in `python/src/moonshine_voice/transcriber.py:68`) is the main entry point for speech-to-text functionality:
+
+```python
+transcriber = Transcriber(
+    model_path=model_path,
+    model_arch=ModelArch.BASE,
+    update_interval=0.5
+)
+```
+
+**Key responsibilities:**
+- Loading and managing Moonshine ASR models
+- Coordinating the processing pipeline
+- Managing audio streams
+- Emitting events to listeners
+
+### Stream
+
+Streams (defined in `python/src/moonshine_voice/transcriber.py:321`) handle real-time audio input:
+
+```python
+stream = transcriber.create_stream()
+stream.start()
+stream.add_audio(audio_data, sample_rate)
+transcript = stream.update_transcription()
+stream.stop()
+```
+
+**Key features:**
+- Multiple streams per transcriber for multiple audio sources
+- Independent transcripts per stream
+- Automatic periodic updates based on `update_interval`
+- Event emission when transcript changes
+
+<Tip>
+  If you only have one audio input source, you can use the transcriber's default stream via `transcriber.start()`, `transcriber.add_audio()`, etc. without creating an explicit stream.
+</Tip>
+
+### Event Listeners
+
+The event system (`python/src/moonshine_voice/transcriber.py:290`) provides reactive updates:
+
+```python
+class MyListener(TranscriptEventListener):
+    def on_line_started(self, event):
+        print(f"Started: {event.line.text}")
+    
+    def on_line_text_changed(self, event):
+        print(f"Updated: {event.line.text}")
+    
+    def on_line_completed(self, event):
+        print(f"Done: {event.line.text}")
+
+transcriber.add_listener(MyListener())
+```
+
+**Event types:**
+- `LineStarted` - New speech segment detected
+- `LineUpdated` - Any line property changed
+- `LineTextChanged` - Transcription text updated
+- `LineCompleted` - Speech segment finished
+- `Error` - Processing error occurred
+
+## Processing Pipeline
+
+When audio is added via `add_audio()`, it flows through this pipeline:
+
+### 1. Audio Buffering
+
+Raw PCM audio is converted to 16kHz mono format internally, regardless of input sample rate.
+
+### 2. Voice Activity Detection (VAD)
+
+The Silero VAD model (`core/silero-vad.h`) segments continuous audio into speech phrases:
+
+- Runs every 30ms on audio chunks
+- Averages results over a window (default 0.5s) for stability
+- Uses a threshold (default 0.5) to distinguish speech from silence
+- Adds padding and look-behind to avoid clipping speech
+
+### 3. Speech-to-Text
+
+Moonshine ASR models transcribe segmented audio:
+
+- **Non-streaming models**: Process complete segments
+- **Streaming models**: Cache encoder output and decoder state for incremental updates
+
+### 4. Speaker Identification (Optional)
+
+Pyannote embedding model identifies speakers for diarization:
+
+- Requires sufficient audio data per segment
+- Assigns unique `speaker_id` (64-bit integer)
+- Provides `speaker_index` for "Speaker 1", "Speaker 2" labeling
+
+### 5. Event Emission
+
+The stream analyzes transcript changes and emits appropriate events to all registered listeners.
+
+## Cross-Platform Architecture
+
+Moonshine Voice runs consistently across platforms:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│   Platform-Specific Bindings                            │
+│   (Python, Swift, Java, etc.)                          │
+└────────────────────────┬────────────────────────────────┘
+                         │
+┌────────────────────────┴────────────────────────────────┐
+│   C API (moonshine-c-api.h)                            │
+│   - Provides platform-agnostic interface                │
+│   - Thread-safe handle-based design                     │
+└────────────────────────┬────────────────────────────────┘
+                         │
+┌────────────────────────┴────────────────────────────────┐
+│   C++ Core Library                                      │
+│   - Portable implementation                             │
+│   - ONNX Runtime for inference                          │
+│   - Cross-platform audio/file handling                  │
+└─────────────────────────────────────────────────────────┘
+```
+
+The C++ core (`core/`) is the single source of truth, with language-specific bindings providing idiomatic interfaces.
+
+## Thread Safety
+
+From `core/moonshine-c-api.h:64-66`:
+
+<Note>
+  All API calls are thread-safe, so you can call them from multiple threads concurrently. However, calculations on a single transcriber are serialized, so latency will be affected for calls from other threads while the transcriber is busy.
+</Note>
+
+## Session Management
+
+Sessions define the lifecycle of transcription:
+
+- `start()` - Begins new session, resets transcript
+- `add_audio()` - Feeds audio into active session
+- `stop()` - Ends session, completes any active lines
+
+Each session has one transcript document. Calling `start()` resets the transcript, so save any data you need beforehand.
+
+## Resource Management
+
+The architecture uses handle-based resource management:
+
+```c
+// From core/moonshine-c-api.h
+int32_t transcriber_handle = moonshine_load_transcriber_from_files(...);
+int32_t stream_handle = moonshine_create_stream(transcriber_handle, 0);
+
+// ... use resources ...
+
+moonshine_free_stream(transcriber_handle, stream_handle);
+moonshine_free_transcriber(transcriber_handle);
+```
+
+Handles can be reused after freeing, so always clear references in your code after calling free functions.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Transcription" icon="microphone" href="/concepts/transcription">
+    Understand the speech-to-text pipeline
+  </Card>
+  <Card title="Streaming" icon="bolt" href="/concepts/streaming">
+    Learn how streaming reduces latency
+  </Card>
+  <Card title="Intent Recognition" icon="lightbulb" href="/concepts/intent-recognition">
+    Build voice command interfaces
+  </Card>
+  <Card title="Models" icon="brain" href="/concepts/models">
+    Explore model architectures
+  </Card>
+</CardGroup>

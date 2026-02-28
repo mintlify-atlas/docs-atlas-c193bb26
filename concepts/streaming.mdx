@@ -1,0 +1,508 @@
+---
+title: Streaming ASR
+description: How streaming models achieve low latency for real-time voice applications
+---
+
+## Overview
+
+Streaming automatic speech recognition (ASR) is the key to building responsive voice interfaces. Moonshine's streaming models process audio incrementally, caching computations to deliver transcription results with dramatically lower latency than non-streaming approaches.
+
+## The Latency Problem
+
+From README.md:114-117, traditional ASR models like Whisper have fundamental limitations for live speech:
+
+<Note>
+  **Whisper always operates on a 30-second input window**. This means a lot of wasted computation encoding zero padding in the encoder and decoder, resulting in longer latency. Voice interfaces need latency below 200ms for good user experience.
+</Note>
+
+**Additional Whisper limitations:**
+- No caching: Each transcription starts from scratch
+- Fixed input: Cannot process variable-length segments efficiently
+- No incremental updates: Must wait for complete segment
+
+Streaming models solve these problems.
+
+## How Streaming Works
+
+### Incremental Processing
+
+From `core/moonshine-c-api.h:321-386`, streaming allows incremental audio addition with cached state:
+
+```
+Time →
+
+┌─────────┬─────────┬─────────┬─────────┬─────────┐
+│ Chunk 1 │ Chunk 2 │ Chunk 3 │ Chunk 4 │ Chunk 5 │  Audio Input
+└─────────┴─────────┴─────────┴─────────┴─────────┘
+     │         │         │         │         │
+     ▼         ▼         ▼         ▼         ▼
+  ┌─────┐  ┌─────┐  ┌─────┐  ┌─────┐  ┌─────┐
+  │ VAD │  │ VAD │  │ VAD │  │ VAD │  │ VAD │       VAD continuously runs
+  └─────┘  └─────┘  └─────┘  └─────┘  └─────┘
+     │         │         │         │         │
+     └─────────┴─────────┴─────────┴────────→┐
+                                              │
+                                         ┌────▼────┐
+                                         │ Encoder │   Cached encoder output
+                                         └────┬────┘
+                                              │
+                                         ┌────▼────┐
+                                         │ Decoder │   Cached decoder state
+                                         └────┬────┘
+                                              │
+                                         Transcription
+```
+
+**Key difference:** Non-streaming processes everything on each call. Streaming caches encoder output and decoder state, only processing new audio.
+
+## Streaming Architecture
+
+### Encoder Caching
+
+From the Moonshine v2 paper (README.md:557-560):
+
+> Our approach to streaming caches the input encoding and part of the decoder's state so that we're able to skip even more of the compute, driving latency down dramatically.
+
+The encoder processes audio features into a latent representation:
+
+```
+Audio Chunk → [Frontend] → [Encoder] → Cached Latent Representation
+                  ↓             ↓
+              Conv Layers    Transformer
+              (learned)      Layers
+```
+
+**Frontend processing** (README.md:591-593):
+- Learned convolution layers generate features (similar to MEL spectrograms)
+- Operates on 16-bit signed integer raw audio input
+- Preserved at BFloat16 precision for accuracy
+
+### Decoder State Management
+
+The decoder uses cached state to continue from where it left off:
+
+```python
+# From core/moonshine-c-api.h:49-56
+input_node_names = ["input", "state", "sr"]
+
+# State tensor shape: [2, 1, 128]
+size_state = 2 * 1 * 128
+```
+
+Each transcription call:
+1. Reuses previous decoder `state` tensor
+2. Adds new encoder output
+3. Generates new tokens
+4. Updates state for next call
+
+### Ergodic Property
+
+From README.md:559:
+
+> **Moonshine v2: Ergodic Streaming Encoder ASR for Latency-Critical Speech Applications** introduces our approach to streaming.
+
+Ergodic streaming means the model can:
+- Start from any point in audio stream
+- Update incrementally with new data
+- Maintain consistent quality regardless of chunk boundaries
+
+## Using Streaming Models
+
+### Model Selection
+
+From `core/moonshine-c-api.h:97-103`, streaming architectures:
+
+```python
+from moonshine_voice import ModelArch
+
+ModelArch.TINY_STREAMING      # 34M params, 12.00% WER
+ModelArch.SMALL_STREAMING     # 123M params, 7.84% WER
+ModelArch.MEDIUM_STREAMING    # 245M params, 6.65% WER
+```
+
+Compare to non-streaming:
+
+```python
+ModelArch.TINY    # 26M params, 12.66% WER
+ModelArch.BASE    # 58M params, 10.07% WER
+```
+
+<Info>
+  Streaming models have slightly more parameters than non-streaming versions due to state management, but deliver much lower latency in practice.
+</Info>
+
+### Basic Streaming Usage
+
+```python
+from moonshine_voice import Transcriber, ModelArch, TranscriptEventListener
+
+class StreamingListener(TranscriptEventListener):
+    def on_line_started(self, event):
+        print(f"Speech started...")
+    
+    def on_line_text_changed(self, event):
+        # Incremental updates while user is speaking
+        print(f"\rCurrent: {event.line.text}", end="")
+    
+    def on_line_completed(self, event):
+        # Final result after pause
+        print(f"\nFinal: {event.line.text}")
+        print(f"Latency: {event.line.last_transcription_latency_ms}ms")
+
+# Create transcriber with streaming model
+transcriber = Transcriber(
+    model_path=model_path,
+    model_arch=ModelArch.SMALL_STREAMING,
+    update_interval=0.5  # Update every 500ms
+)
+
+transcriber.add_listener(StreamingListener())
+transcriber.start()
+
+# Add audio as it arrives
+for audio_chunk in microphone_stream:
+    transcriber.add_audio(audio_chunk, sample_rate)
+
+transcriber.stop()
+```
+
+## Latency Characteristics
+
+### Response Latency
+
+From README.md:489-490:
+
+> Latency metric: The average time between when the library determines the user has stopped talking and the delivery of the final transcript.
+
+**Streaming advantage:** Most work happens while user is still speaking. Only final decoding needed after speech ends.
+
+### Benchmark Results
+
+From README.md:101-108:
+
+| Model                      | Parameters | WER   | MacBook Pro | Linux x86 | R. Pi 5 |
+|----------------------------|------------|-------|-------------|-----------|----------|
+| Moonshine Medium Streaming | 245M       | 6.65% | **107ms**   | 269ms     | 802ms    |
+| Whisper Large v3           | 1.5B       | 7.44% | 11,286ms    | 16,919ms  | N/A      |
+| Moonshine Small Streaming  | 123M       | 7.84% | **73ms**    | 165ms     | 527ms    |
+| Whisper Small              | 244M       | 8.59% | 1940ms      | 3,425ms   | 10,397ms |
+| Moonshine Tiny Streaming   | 34M        | 12.00%| **34ms**    | 69ms      | 237ms    |
+| Whisper Tiny               | 39M       | 12.81%| 277ms       | 1,141ms   | 5,863ms  |
+
+<Tip>
+  Moonshine streaming models are **8-150x faster** than equivalent Whisper models for real-time transcription.
+</Tip>
+
+### Compute Load
+
+From README.md:488-489:
+
+> If the percentage shows 20%, that means speech processing takes a fifth of compute time, leaving 80% for the rest of your application.
+
+Streaming models reduce compute load by:
+- Caching encoder output
+- Reusing decoder state
+- Processing only new audio increments
+
+## Streaming API Details
+
+### Stream Creation
+
+From `python/src/moonshine_voice/transcriber.py:239-252`:
+
+```python
+def create_stream(self, update_interval: float = None, flags: int = 0) -> Stream:
+    """
+    Create a new stream for real-time transcription.
+    
+    Args:
+        update_interval: Interval in seconds between updates (default: 0.5)
+        flags: Flags for stream creation (default: 0)
+    
+    Returns:
+        Stream object for real-time transcription
+    """
+    if update_interval is None:
+        update_interval = self._update_interval
+    return Stream(self, update_interval, flags)
+```
+
+Multiple streams can share one transcriber to save memory:
+
+```python
+transcriber = Transcriber(model_path, ModelArch.SMALL_STREAMING)
+
+mic_stream = transcriber.create_stream(update_interval=0.3)
+system_audio_stream = transcriber.create_stream(update_interval=0.5)
+
+mic_stream.start()
+system_audio_stream.start()
+```
+
+### Adding Audio
+
+From `core/moonshine-c-api.h:420-449`:
+
+```python
+def add_audio(self, audio_data: List[float], sample_rate: int = 16000):
+    """Add audio data to the stream."""
+```
+
+**Important properties:**
+- Chunk size doesn't affect performance
+- No processing happens immediately - audio is buffered
+- Safe to call from time-critical audio threads
+- Transcription triggered by `update_interval` timer
+
+### Forced Updates
+
+From `python/src/moonshine_voice/transcriber.py:376-385`:
+
+```python
+def update_transcription(self, flags: int = 0) -> Transcript:
+    """Update the transcription from the stream."""
+    out_transcript = ctypes.POINTER(TranscriptC)()
+    error = self._lib.moonshine_transcribe_stream(
+        self._transcriber._handle,
+        self._handle,
+        flags,  # Use MOONSHINE_FLAG_FORCE_UPDATE to bypass cache
+        ctypes.byref(out_transcript)
+    )
+```
+
+Force immediate update:
+
+```python
+transcript = stream.update_transcription(
+    flags=Transcriber.MOONSHINE_FLAG_FORCE_UPDATE
+)
+```
+
+## Update Intervals
+
+### Choosing Update Interval
+
+From `python/src/moonshine_voice/transcriber.py:332-334`:
+
+```python
+self._update_interval = update_interval  # Default: 0.5 seconds
+self._stream_time = 0.0
+self._last_update_time = 0.0
+```
+
+**Trade-offs:**
+
+| Interval | Responsiveness | Compute Load | Use Case |
+|----------|----------------|--------------|----------|
+| 0.1s     | Very high      | Higher       | Real-time captions |
+| 0.5s     | Good           | Moderate     | Voice assistants (default) |
+| 1.0s     | Lower          | Lower        | Background transcription |
+| 2.0s+    | Minimal        | Minimal      | Batch-like processing |
+
+<Note>
+  Even with long intervals, streaming models do most work upfront. Longer intervals mainly reduce intermediate event emission, not overall latency.
+</Note>
+
+### Automatic Updates
+
+From `python/src/moonshine_voice/transcriber.py:371-374`:
+
+```python
+self._stream_time += len(audio_data) / sample_rate
+if self._stream_time - self._last_update_time >= self._update_interval:
+    self.update_transcription(0)
+    self._last_update_time = self._stream_time
+```
+
+Transcription automatically triggers when sufficient audio accumulated.
+
+## Stream State Management
+
+### Session Lifecycle
+
+From `core/moonshine-c-api.h:402-418`:
+
+```python
+stream = transcriber.create_stream()
+
+# Start session - initializes state
+stream.start()
+
+# Add audio continuously
+while capturing:
+    stream.add_audio(chunk, sample_rate)
+
+# Stop session - finalizes active lines
+final_transcript = stream.stop()
+
+# Can start again for new session
+stream.start()
+```
+
+**State management:**
+- `start()` resets cached encoder/decoder state
+- `stop()` completes any active speech segments
+- Calling `start()` again begins fresh session
+
+### Discontinuities
+
+From `core/moonshine-c-api.h:403-405`:
+
+> Start/stop are supported because there may sometimes be a discontinuity in the audio input, for example when the user mutes their input, so we need a way to start fresh after a break.
+
+Use `stop()` and `start()` when:
+- User mutes/unmutes microphone
+- Switching audio sources
+- Long pauses in input stream
+- Resetting conversation context
+
+## Streaming Performance Optimization
+
+### Model Selection by Platform
+
+```python
+import platform
+
+if platform.machine() == 'aarch64':  # Raspberry Pi, mobile
+    model_arch = ModelArch.TINY_STREAMING
+elif platform.system() == 'Darwin':  # macOS
+    model_arch = ModelArch.MEDIUM_STREAMING
+else:  # Linux/Windows desktop
+    model_arch = ModelArch.SMALL_STREAMING
+```
+
+### Adjust Update Interval by Workload
+
+```python
+# Real-time captions - need frequent updates
+caption_stream = transcriber.create_stream(update_interval=0.2)
+
+# Voice commands - can wait for completion
+command_stream = transcriber.create_stream(update_interval=1.0)
+```
+
+### Monitor Latency
+
+```python
+class LatencyMonitor(TranscriptEventListener):
+    def on_line_completed(self, event):
+        latency_ms = event.line.last_transcription_latency_ms
+        if latency_ms > 200:
+            print(f"Warning: High latency {latency_ms}ms")
+```
+
+## Streaming vs Non-Streaming
+
+### When to Use Streaming
+
+**Use streaming models for:**
+- Live microphone input
+- Real-time transcription display
+- Voice assistants and commands
+- Interactive voice interfaces
+- Low-latency requirements (under 200ms)
+
+**From README.md:99:**
+> TL;DR - When you're working with live speech.
+
+### When to Use Non-Streaming
+
+**Use non-streaming models for:**
+- Pre-recorded audio files
+- Batch transcription jobs
+- When accuracy is more important than latency
+- Very short audio clips (under 5 seconds)
+- Constrained memory environments
+
+### Hybrid Approach
+
+```python
+# Quick streaming preview
+streaming_transcriber = Transcriber(
+    model_path, ModelArch.SMALL_STREAMING
+)
+preview = streaming_transcriber.transcribe_without_streaming(
+    audio_data, sample_rate
+)
+
+# High-accuracy final pass
+final_transcriber = Transcriber(
+    model_path, ModelArch.BASE
+)
+final = final_transcriber.transcribe_without_streaming(
+    audio_data, sample_rate
+)
+```
+
+## Example: Low-Latency Voice Assistant
+
+```python
+from moonshine_voice import (
+    Transcriber,
+    ModelArch,
+    TranscriptEventListener,
+    IntentRecognizer
+)
+
+class VoiceAssistant(TranscriptEventListener):
+    def __init__(self):
+        self.current_text = ""
+    
+    def on_line_started(self, event):
+        self.current_text = ""
+        print("Listening...")
+    
+    def on_line_text_changed(self, event):
+        # Show live updates while user speaks
+        self.current_text = event.line.text
+        print(f"\r{self.current_text}", end="", flush=True)
+    
+    def on_line_completed(self, event):
+        # Get final result immediately after speech ends
+        print(f"\nHeard: {event.line.text}")
+        print(f"Latency: {event.line.last_transcription_latency_ms}ms")
+        
+        # Process command
+        self.handle_command(event.line.text)
+    
+    def handle_command(self, text):
+        # Your assistant logic here
+        pass
+
+# Setup with fastest streaming model
+transcriber = Transcriber(
+    model_path=model_path,
+    model_arch=ModelArch.SMALL_STREAMING,
+    update_interval=0.3  # Aggressive updates for responsiveness
+)
+
+assistant = VoiceAssistant()
+transcriber.add_listener(assistant)
+
+# Connect to microphone
+from moonshine_voice import MicTranscriber
+mic = MicTranscriber(
+    model_path=model_path,
+    model_arch=ModelArch.SMALL_STREAMING,
+    update_interval=0.3
+)
+mic.add_listener(assistant)
+mic.start()
+
+try:
+    while True:
+        time.sleep(0.1)
+except KeyboardInterrupt:
+    mic.stop()
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Model Architectures" icon="brain" href="/concepts/models">
+    Compare streaming model sizes and accuracy
+  </Card>
+  <Card title="Intent Recognition" icon="lightbulb" href="/concepts/intent-recognition">
+    Build voice command detection
+  </Card>
+</CardGroup>

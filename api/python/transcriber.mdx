@@ -1,0 +1,258 @@
+---
+title: Transcriber
+description: Main transcriber class for speech-to-text processing
+---
+
+The `Transcriber` class is the core of Moonshine Voice, handling the speech-to-text pipeline including voice activity detection, audio segmentation, and transcription.
+
+## Class Definition
+
+```python
+from moonshine_voice import Transcriber, ModelArch
+
+transcriber = Transcriber(
+    model_path: str,
+    model_arch: ModelArch = ModelArch.BASE,
+    update_interval: float = 0.5,
+    options: dict = None
+)
+```
+
+## Constructor Parameters
+
+<ParamField path="model_path" type="str" required>
+  Path to the directory containing model files (encoder_model.ort, decoder_model_merged.ort, tokenizer.bin)
+</ParamField>
+
+<ParamField path="model_arch" type="ModelArch" default="ModelArch.BASE">
+  Model architecture to use. Options:
+  - `ModelArch.TINY` - 26M parameters, fastest
+  - `ModelArch.BASE` - 58M parameters, balanced
+  - `ModelArch.TINY_STREAMING` - 34M parameters, streaming support
+  - `ModelArch.SMALL_STREAMING` - 123M parameters, streaming support
+  - `ModelArch.MEDIUM_STREAMING` - 245M parameters, highest accuracy
+</ParamField>
+
+<ParamField path="update_interval" type="float" default="0.5">
+  How often (in seconds) to run transcription updates. Lower values provide more frequent updates but use more CPU.
+</ParamField>
+
+<ParamField path="options" type="dict" default="None">
+  Advanced configuration options as string key-value pairs:
+  
+  <Expandable title="Available options">
+    - `skip_transcription` ("true"/"false") - Skip text generation, only do VAD
+    - `max_tokens_per_second` ("6.5" or "13.0") - Hallucination detection threshold
+    - `vad_threshold` ("0.0" to "1.0") - Voice activity detection sensitivity
+    - `save_input_wav_path` (path) - Save input audio for debugging
+    - `log_api_calls` ("true"/"false") - Log all API calls
+    - `identify_speakers` ("true"/"false") - Enable speaker identification
+    - `return_audio_data` ("true"/"false") - Include audio in transcript lines
+  </Expandable>
+</ParamField>
+
+## Methods
+
+### transcribe_without_streaming
+
+Transcribe pre-recorded audio without streaming.
+
+```python
+transcript = transcriber.transcribe_without_streaming(
+    audio_data: List[float],
+    sample_rate: int = 16000,
+    flags: int = 0
+) -> Transcript
+```
+
+<ParamField path="audio_data" type="List[float]" required>
+  Audio samples as mono PCM floats between -1.0 and 1.0
+</ParamField>
+
+<ParamField path="sample_rate" type="int" default="16000">
+  Sample rate in Hz. The library will resample to 16kHz internally.
+</ParamField>
+
+<ParamField path="flags" type="int" default="0">
+  Reserved for future use
+</ParamField>
+
+**Returns:** `Transcript` object with finalized transcription lines
+
+### start
+
+Begin a new streaming transcription session.
+
+```python
+transcriber.start()
+```
+
+Resets the transcript and prepares for new audio input. Must be called before `add_audio()`.
+
+### stop
+
+End the current streaming session.
+
+```python
+transcriber.stop()
+```
+
+Marks any active line as complete and calls completion event listeners.
+
+### add_audio
+
+Add audio data to the active stream.
+
+```python
+transcriber.add_audio(
+    audio_data: List[float],
+    sample_rate: int = 16000
+)
+```
+
+<ParamField path="audio_data" type="List[float]" required>
+  Mono PCM audio samples as floats (-1.0 to 1.0). Can be any chunk size.
+</ParamField>
+
+<ParamField path="sample_rate" type="int" default="16000">
+  Sample rate of the input audio
+</ParamField>
+
+### update_transcription
+
+Manually trigger a transcription update.
+
+```python
+transcript = transcriber.update_transcription(
+    flags: int = 0
+) -> Transcript
+```
+
+<ParamField path="flags" type="int" default="0">
+  Use `Transcriber.MOONSHINE_FLAG_FORCE_UPDATE` to bypass the 200ms cache
+</ParamField>
+
+**Returns:** Current `Transcript` object
+
+### create_stream
+
+Create an additional stream for processing multiple audio sources.
+
+```python
+stream = transcriber.create_stream(
+    flags: int = 0,
+    update_interval: float = None
+) -> Stream
+```
+
+<ParamField path="flags" type="int" default="0">
+  Reserved for future use
+</ParamField>
+
+<ParamField path="update_interval" type="float" default="None">
+  Override the transcriber's default update interval for this stream
+</ParamField>
+
+**Returns:** `Stream` object
+
+### add_listener
+
+Register an event listener for transcription events.
+
+```python
+transcriber.add_listener(listener: TranscriptEventListener)
+```
+
+<ParamField path="listener" type="TranscriptEventListener" required>
+  Object implementing the event listener protocol with methods:
+  - `on_line_started(event: LineStarted)`
+  - `on_line_updated(event: LineUpdated)`
+  - `on_line_text_changed(event: LineTextChanged)`
+  - `on_line_completed(event: LineCompleted)`
+  - `on_error(event: Error)`
+</ParamField>
+
+### remove_listener
+
+Remove a registered event listener.
+
+```python
+transcriber.remove_listener(listener: TranscriptEventListener)
+```
+
+## Context Manager Support
+
+The `Transcriber` class supports Python's context manager protocol:
+
+```python
+with Transcriber(model_path=path, model_arch=ModelArch.BASE) as transcriber:
+    transcriber.start()
+    transcriber.add_audio(audio_data, sample_rate)
+    transcriber.stop()
+# Automatically cleaned up
+```
+
+## Example: File Transcription
+
+```python
+from moonshine_voice import Transcriber, ModelArch, load_wav_file
+
+# Load audio file
+audio_data, sample_rate = load_wav_file("speech.wav")
+
+# Create transcriber
+transcriber = Transcriber(
+    model_path="/path/to/models",
+    model_arch=ModelArch.BASE
+)
+
+# Transcribe
+transcript = transcriber.transcribe_without_streaming(
+    audio_data,
+    sample_rate
+)
+
+# Print results
+for line in transcript.lines:
+    print(f"[{line.start_time:.2f}s] {line.text}")
+
+transcriber.close()
+```
+
+## Example: Streaming with Events
+
+```python
+from moonshine_voice import Transcriber, TranscriptEventListener
+
+class MyListener(TranscriptEventListener):
+    def on_line_started(self, event):
+        print(f"Started: {event.line.text}")
+    
+    def on_line_text_changed(self, event):
+        print(f"Updated: {event.line.text}")
+    
+    def on_line_completed(self, event):
+        print(f"Final: {event.line.text}")
+    
+    def on_error(self, event):
+        print(f"Error: {event.error}")
+
+transcriber = Transcriber(
+    model_path="/path/to/models",
+    model_arch=ModelArch.TINY_STREAMING,
+    update_interval=0.5
+)
+
+transcriber.add_listener(MyListener())
+
+transcriber.start()
+# Feed audio chunks with add_audio()
+transcriber.stop()
+```
+
+## See Also
+
+- [MicTranscriber](/api/python/mic-transcriber) - Microphone integration
+- [Stream](/api/python/stream) - Multi-stream API
+- [Events](/api/python/events) - Event types and listeners
+- [Data Structures](/api/python/data-structures) - Transcript and TranscriptLine

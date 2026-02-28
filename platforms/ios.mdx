@@ -1,0 +1,421 @@
+---
+title: 'iOS Platform Guide'
+description: 'Complete guide to integrating Moonshine Voice in iOS applications'
+icon: 'apple'
+---
+
+Moonshine Voice provides native Swift support for iOS through the Swift Package Manager, making it easy to add voice transcription to your iOS apps.
+
+## Installation
+
+<Steps>
+  <Step title="Add Package Dependency">
+    In Xcode, add the Moonshine Swift package:
+    
+    1. Right-click on the file view sidebar
+    2. Choose **"Add Package Dependencies..."** from the menu
+    3. Paste `https://github.com/moonshine-ai/moonshine-swift/` into the search box
+    4. Select **moonshine-swift** and click **"Add Package"**
+    
+    <Note>
+      The package uses Swift Package Manager (SPM) and is auto-updated from GitHub.
+    </Note>
+  </Step>
+  
+  <Step title="Import the Framework">
+    In your Swift files, import the framework:
+    
+    ```swift
+    import MoonshineVoice
+    ```
+  </Step>
+  
+  <Step title="Add Model Files">
+    Download model files and add them to your app bundle:
+    
+    ```bash
+    # Download English models
+    pip install moonshine-voice
+    python -m moonshine_voice.download --language en
+    ```
+    
+    Then add the model files to your Xcode project:
+    1. Drag the model folder into Xcode
+    2. Ensure **"Copy items if needed"** is checked
+    3. Add to target in the deployment phase
+  </Step>
+  
+  <Step title="Configure Permissions">
+    Add microphone permission to your `Info.plist`:
+    
+    ```xml
+    <key>NSMicrophoneUsageDescription</key>
+    <string>This app needs microphone access to transcribe your speech</string>
+    ```
+  </Step>
+</Steps>
+
+## Quick Start Example
+
+Download and try the pre-built example:
+
+```bash
+# Download example app
+wget https://github.com/moonshine-ai/moonshine/releases/latest/download/ios-examples.tar.gz
+tar -xzf ios-examples.tar.gz
+
+# Open in Xcode
+open Transcriber/Transcriber.xcodeproj
+```
+
+Build and run on your device to see Moonshine Voice in action.
+
+## Basic Implementation
+
+### SwiftUI Transcription App
+
+Here's a complete example of a SwiftUI app with live transcription:
+
+```swift
+import SwiftUI
+import MoonshineVoice
+
+struct ContentView: View {
+    @State private var isRecording = false
+    @State private var messages: [TranscriptLine] = []
+    @State private var transcriber: MicTranscriber?
+    
+    var body: some View {
+        VStack {
+            // Transcript display
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 8) {
+                        ForEach(messages, id: \.lineId) { message in
+                            Text(message.text)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal)
+                                .padding(.vertical, 4)
+                        }
+                        Color.clear
+                            .frame(height: 1)
+                            .id("bottom")
+                    }
+                    .padding(.vertical)
+                }
+                .onChange(of: messages.count) { _, _ in
+                    withAnimation {
+                        proxy.scrollTo("bottom", anchor: .bottom)
+                    }
+                }
+            }
+            
+            Spacer()
+            
+            // Record button
+            HStack {
+                Spacer()
+                Button(action: { toggleRecording() }) {
+                    Image(systemName: isRecording ? "mic.fill" : "mic")
+                        .font(.system(size: 36))
+                        .foregroundColor(isRecording ? .red : .blue)
+                        .padding()
+                        .background(
+                            Circle()
+                                .fill(isRecording ? 
+                                     Color.red.opacity(0.2) : 
+                                     Color.blue.opacity(0.2))
+                        )
+                }
+                Spacer()
+            }
+        }
+        .padding()
+        .onAppear { setupTranscriber() }
+    }
+    
+    func setupTranscriber() {
+        // Get model path from bundle
+        guard let modelPath = Bundle.main.path(
+            forResource: "base-en", 
+            ofType: nil
+        ) else {
+            print("Model not found in bundle")
+            return
+        }
+        
+        do {
+            transcriber = try MicTranscriber(
+                modelPath: modelPath,
+                modelArch: .base
+            )
+            
+            // Add event listener
+            transcriber?.addListener { event in
+                DispatchQueue.main.async {
+                    handleTranscriptEvent(event)
+                }
+            }
+        } catch {
+            print("Failed to create transcriber: \(error)")
+        }
+    }
+    
+    func toggleRecording() {
+        isRecording.toggle()
+        
+        if isRecording {
+            transcriber?.start()
+        } else {
+            transcriber?.stop()
+        }
+    }
+    
+    func handleTranscriptEvent(_ event: TranscriptEvent) {
+        switch event {
+        case .lineStarted(let line):
+            messages.append(line)
+            
+        case .lineTextChanged(let line):
+            if let index = messages.firstIndex(where: { $0.lineId == line.lineId }) {
+                messages[index] = line
+            }
+            
+        case .lineCompleted(let line):
+            if let index = messages.firstIndex(where: { $0.lineId == line.lineId }) {
+                messages[index] = line
+            }
+        }
+    }
+}
+```
+
+### File Transcription
+
+Transcribe audio files without streaming:
+
+```swift
+import MoonshineVoice
+import AVFoundation
+
+func transcribeAudioFile(path: String) throws {
+    // Load model
+    let modelPath = Bundle.main.path(forResource: "base-en", ofType: nil)!
+    let transcriber = try Transcriber(
+        modelPath: modelPath,
+        modelArch: .base
+    )
+    
+    // Load audio file
+    let audioFile = try AVAudioFile(forReading: URL(fileURLWithPath: path))
+    let format = audioFile.processingFormat
+    let frameCount = UInt32(audioFile.length)
+    let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount)!
+    try audioFile.read(into: buffer)
+    
+    // Convert to mono float array
+    let audioData = convertToMono(buffer: buffer)
+    
+    // Transcribe
+    let transcript = try transcriber.transcribeWithoutStreaming(
+        audioData: audioData,
+        sampleRate: Int(format.sampleRate)
+    )
+    
+    // Print results
+    for line in transcript.lines {
+        let start = line.startTime
+        let end = line.startTime + line.duration
+        print("[\(start)s - \(end)s] \(line.text)")
+    }
+}
+
+func convertToMono(buffer: AVAudioPCMBuffer) -> [Float] {
+    guard let floatData = buffer.floatChannelData else { return [] }
+    let frameCount = Int(buffer.frameLength)
+    let channelCount = Int(buffer.format.channelCount)
+    
+    var monoData: [Float] = []
+    monoData.reserveCapacity(frameCount)
+    
+    if channelCount == 1 {
+        monoData = Array(UnsafeBufferPointer(
+            start: floatData[0], 
+            count: frameCount
+        ))
+    } else {
+        // Average multiple channels
+        for frame in 0..<frameCount {
+            var sum: Float = 0
+            for channel in 0..<channelCount {
+                sum += floatData[channel][frame]
+            }
+            monoData.append(sum / Float(channelCount))
+        }
+    }
+    
+    return monoData
+}
+```
+
+## Model Architectures
+
+Swift supports these model architectures via the `ModelArch` enum:
+
+```swift
+public enum ModelArch: Int {
+    case tiny = 0
+    case base = 1
+    case tinyStreaming = 2
+    case smallStreaming = 3
+    case mediumStreaming = 4
+}
+```
+
+Choose based on your accuracy/performance requirements:
+
+- **tiny** - Smallest, fastest (26M parameters)
+- **tinyStreaming** - Small with streaming support (34M parameters)
+- **base** - Good balance (58M parameters)
+- **smallStreaming** - High accuracy with streaming (123M parameters)
+- **mediumStreaming** - Best accuracy (245M parameters)
+
+## Supported Languages
+
+Load models for different languages:
+
+```swift
+// English
+let enModel = Bundle.main.path(forResource: "base-en", ofType: nil)!
+
+// Spanish
+let esModel = Bundle.main.path(forResource: "base-es", ofType: nil)!
+
+// Japanese
+let jaModel = Bundle.main.path(forResource: "base-ja", ofType: nil)!
+```
+
+Available: English, Spanish, Japanese, Korean, Mandarin, Vietnamese, Ukrainian, Arabic
+
+## Event-Driven Interface
+
+Moonshine uses events to notify your app of transcription updates:
+
+```swift
+transcriber.addListener { event in
+    switch event {
+    case .lineStarted(let line):
+        // New speech segment detected
+        print("Started: \(line.text)")
+        
+    case .lineTextChanged(let line):
+        // Text updated during speech
+        print("Updated: \(line.text)")
+        
+    case .lineCompleted(let line):
+        // Speech segment finished
+        print("Completed: \(line.text)")
+    }
+}
+```
+
+### Event Guarantees
+
+- `lineStarted` called exactly once per segment
+- `lineCompleted` called exactly once per segment (after lineStarted)
+- `lineTextChanged` called zero or more times between start and completion
+- Only one line active at a time per stream
+- Each line has a unique 64-bit `lineId`
+- Line data never changes after `lineCompleted`
+
+## Performance Considerations
+
+### Model Size vs Accuracy
+
+| Model | Size | WER | iPhone 12 Latency |
+|-------|------|-----|-------------------|
+| Tiny | 26MB | 12.66% | ~30ms |
+| Tiny Streaming | 34MB | 12.00% | ~25ms |
+| Base | 58MB | 10.07% | ~40ms |
+| Small Streaming | 123MB | 7.84% | ~60ms |
+| Medium Streaming | 245MB | 6.65% | ~90ms |
+
+### Optimization Tips
+
+1. **Use streaming models** for real-time applications (lower latency)
+2. **Bundle only needed models** to reduce app size
+3. **Test on actual devices** - simulator performance differs significantly
+4. **Adjust update_interval** to balance responsiveness vs CPU usage
+
+## Common Issues
+
+### Microphone Permission Denied
+
+```swift
+import AVFoundation
+
+func checkMicrophonePermission() {
+    switch AVAudioSession.sharedInstance().recordPermission {
+    case .granted:
+        print("Microphone permission granted")
+    case .denied:
+        print("Microphone permission denied")
+        // Show alert to open Settings
+    case .undetermined:
+        AVAudioSession.sharedInstance().requestRecordPermission { granted in
+            if granted {
+                print("Permission granted")
+            }
+        }
+    @unknown default:
+        break
+    }
+}
+```
+
+### Model Not Found
+
+Ensure model files are:
+1. Added to Xcode project
+2. Included in target's "Copy Bundle Resources" build phase
+3. Accessible via `Bundle.main.path()`
+
+```swift
+if let modelPath = Bundle.main.path(forResource: "base-en", ofType: nil) {
+    print("Model found at: \(modelPath)")
+} else {
+    print("Model not found in bundle")
+}
+```
+
+### Build Errors
+
+If you encounter build errors:
+1. Clean build folder (Cmd+Shift+K)
+2. Delete derived data
+3. Verify package is properly resolved
+4. Check minimum iOS deployment target (iOS 14+)
+
+## Example Projects
+
+The repository includes complete examples:
+
+- **Transcriber** - Full SwiftUI app with live microphone transcription
+- Located in `examples/ios/Transcriber/`
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="API Reference" icon="code" href="/api-reference/swift">
+    Detailed Swift API documentation
+  </Card>
+  <Card title="Models" icon="brain" href="/models">
+    Available models and architectures
+  </Card>
+  <Card title="macOS Guide" icon="desktop" href="/platforms/macos">
+    Using Moonshine on macOS
+  </Card>
+  <Card title="Examples" icon="flask" href="/examples/ios">
+    More iOS examples
+  </Card>
+</CardGroup>

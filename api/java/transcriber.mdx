@@ -1,0 +1,472 @@
+---
+title: "Transcriber"
+description: "Java/Android API reference for the Transcriber class"
+---
+
+## Overview
+
+The `Transcriber` class is the main entry point for Moonshine Voice in Java/Android. It handles loading models and managing transcription sessions.
+
+## Initialization
+
+### Constructor
+
+Create a new Transcriber instance.
+
+```java
+public Transcriber()
+public Transcriber(List<TranscriberOption> options)
+```
+
+<ParamField path="options" type="List<TranscriberOption>">
+  Optional list of transcriber options for advanced configuration
+</ParamField>
+
+**Example:**
+
+```java
+import ai.moonshine.voice.Transcriber;
+import ai.moonshine.voice.TranscriberOption;
+import java.util.ArrayList;
+import java.util.List;
+
+// Basic initialization
+Transcriber transcriber = new Transcriber();
+
+// With options
+List<TranscriberOption> options = new ArrayList<>();
+transcriber = new Transcriber(options);
+```
+
+## Loading Models
+
+### loadFromFiles
+
+Load the transcriber from model files on disk.
+
+```java
+public void loadFromFiles(String modelRootDir, int modelArch)
+```
+
+<ParamField path="modelRootDir" type="String" required>
+  Path to the directory containing model files (encoder_model.ort, decoder_model_merged.ort, tokenizer.bin)
+</ParamField>
+
+<ParamField path="modelArch" type="int" required>
+  Model architecture to use. Use constants from `JNI` class:
+  - `JNI.MOONSHINE_MODEL_ARCH_TINY` (0)
+  - `JNI.MOONSHINE_MODEL_ARCH_BASE` (1)
+  - `JNI.MOONSHINE_MODEL_ARCH_TINY_STREAMING` (2)
+  - `JNI.MOONSHINE_MODEL_ARCH_BASE_STREAMING` (3)
+  - `JNI.MOONSHINE_MODEL_ARCH_SMALL_STREAMING` (4)
+  - `JNI.MOONSHINE_MODEL_ARCH_MEDIUM_STREAMING` (5)
+</ParamField>
+
+**Throws:** `RuntimeException` if the transcriber cannot be loaded
+
+**Example:**
+
+```java
+import ai.moonshine.voice.JNI;
+
+Transcriber transcriber = new Transcriber();
+transcriber.loadFromFiles(
+    "/sdcard/moonshine/models",
+    JNI.MOONSHINE_MODEL_ARCH_BASE
+);
+```
+
+### loadFromMemory
+
+Load the transcriber from model data in memory.
+
+```java
+public void loadFromMemory(
+    byte[] encoderModelData,
+    byte[] decoderModelData,
+    byte[] tokenizerData,
+    int modelArch
+)
+```
+
+<ParamField path="encoderModelData" type="byte[]" required>
+  Encoder model data (encoder_model.ort contents)
+</ParamField>
+
+<ParamField path="decoderModelData" type="byte[]" required>
+  Decoder model data (decoder_model_merged.ort contents)
+</ParamField>
+
+<ParamField path="tokenizerData" type="byte[]" required>
+  Tokenizer data (tokenizer.bin contents)
+</ParamField>
+
+<ParamField path="modelArch" type="int" required>
+  Model architecture to use
+</ParamField>
+
+**Throws:** `RuntimeException` if the transcriber cannot be loaded
+
+### loadFromAssets
+
+Load the transcriber from Android assets.
+
+```java
+public void loadFromAssets(
+    AppCompatActivity parentContext,
+    String path,
+    int modelArch
+)
+```
+
+<ParamField path="parentContext" type="AppCompatActivity" required>
+  The parent activity context for accessing assets
+</ParamField>
+
+<ParamField path="path" type="String" required>
+  Path to the model directory in assets (e.g., "models")
+</ParamField>
+
+<ParamField path="modelArch" type="int" required>
+  Model architecture to use
+</ParamField>
+
+**Throws:** `RuntimeException` if the transcriber cannot be loaded from assets
+
+**Example:**
+
+```java
+import androidx.appcompat.app.AppCompatActivity;
+
+public class MainActivity extends AppCompatActivity {
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        
+        Transcriber transcriber = new Transcriber();
+        transcriber.loadFromAssets(
+            this,
+            "models",
+            JNI.MOONSHINE_MODEL_ARCH_TINY
+        );
+    }
+}
+```
+
+## Non-Streaming Transcription
+
+### transcribeWithoutStreaming
+
+Transcribe audio data without streaming.
+
+```java
+public Transcript transcribeWithoutStreaming(
+    float[] audioData,
+    int sampleRate
+)
+```
+
+<ParamField path="audioData" type="float[]" required>
+  Array of PCM audio samples (float values from -1.0 to 1.0)
+</ParamField>
+
+<ParamField path="sampleRate" type="int" required>
+  Sample rate in Hz (e.g., 16000)
+</ParamField>
+
+**Returns:** A `Transcript` object containing the transcription lines
+
+**Example:**
+
+```java
+float[] audioData = // ... load audio data
+
+Transcript transcript = transcriber.transcribeWithoutStreaming(
+    audioData,
+    16000
+);
+
+for (TranscriptLine line : transcript.lines) {
+    System.out.println("[" + line.startTime + "s] " + line.text);
+}
+```
+
+## Streaming Transcription (Default Stream)
+
+The transcriber provides convenience methods that operate on a default stream:
+
+### start
+
+Start the default stream.
+
+```java
+public void start()
+```
+
+**Example:**
+
+```java
+transcriber.start();
+```
+
+### stop
+
+Stop the default stream and process any remaining audio.
+
+```java
+public void stop()
+```
+
+**Example:**
+
+```java
+transcriber.stop();
+```
+
+### addAudio
+
+Add audio data to the default stream.
+
+```java
+public void addAudio(float[] audioData, int sampleRate)
+```
+
+<ParamField path="audioData" type="float[]" required>
+  Array of PCM audio samples (float values from -1.0 to 1.0)
+</ParamField>
+
+<ParamField path="sampleRate" type="int" required>
+  Sample rate in Hz
+</ParamField>
+
+**Throws:** `RuntimeException` if transcription fails
+
+**Example:**
+
+```java
+float[] audioData = // ... audio from microphone
+transcriber.addAudio(audioData, 16000);
+```
+
+## Event Listeners
+
+### addListener
+
+Add an event listener to receive transcription events.
+
+```java
+public void addListener(Consumer<TranscriptEvent> listener)
+```
+
+<ParamField path="listener" type="Consumer<TranscriptEvent>" required>
+  A consumer that accepts TranscriptEvent objects
+</ParamField>
+
+**Example:**
+
+```java
+import ai.moonshine.voice.TranscriptEvent;
+import java.util.function.Consumer;
+
+transcriber.addListener(event -> {
+    event.accept(new TranscriptEvent.Visitor() {
+        @Override
+        public void onLineStarted(TranscriptEvent.LineStarted e) {
+            System.out.println("Started: " + e.line.text);
+        }
+        
+        @Override
+        public void onLineTextChanged(TranscriptEvent.LineTextChanged e) {
+            System.out.println("Updated: " + e.line.text);
+        }
+        
+        @Override
+        public void onLineCompleted(TranscriptEvent.LineCompleted e) {
+            System.out.println("Completed: " + e.line.text);
+        }
+        
+        @Override
+        public void onLineUpdated(TranscriptEvent.LineUpdated e) {
+            // Handle line updates
+        }
+        
+        @Override
+        public void onError(TranscriptEvent.Error e) {
+            System.err.println("Error: " + e.cause.getMessage());
+        }
+    });
+});
+```
+
+### removeListener
+
+Remove an event listener.
+
+```java
+public void removeListener(Consumer<TranscriptEvent> listener)
+```
+
+### removeAllListeners
+
+Remove all event listeners.
+
+```java
+public void removeAllListeners()
+```
+
+## Stream Management
+
+### createStream
+
+Create a new stream for real-time transcription.
+
+```java
+public int createStream()
+```
+
+**Returns:** Stream handle (int)
+
+**Example:**
+
+```java
+int streamHandle = transcriber.createStream();
+```
+
+### startStream
+
+Start a specific stream.
+
+```java
+public void startStream(int streamHandle)
+```
+
+### stopStream
+
+Stop a specific stream.
+
+```java
+public void stopStream(int streamHandle)
+```
+
+### addAudioToStream
+
+Add audio data to a specific stream.
+
+```java
+public void addAudioToStream(
+    int streamHandle,
+    float[] audioData,
+    int sampleRate
+)
+```
+
+### freeStream
+
+Free a stream's resources.
+
+```java
+public void freeStream(int streamHandle)
+```
+
+**Example:**
+
+```java
+int stream = transcriber.createStream();
+transcriber.startStream(stream);
+
+float[] audioData = // ... audio data
+transcriber.addAudioToStream(stream, audioData, 16000);
+
+transcriber.stopStream(stream);
+transcriber.freeStream(stream);
+```
+
+## Complete Example
+
+```java
+import ai.moonshine.voice.Transcriber;
+import ai.moonshine.voice.TranscriptEvent;
+import ai.moonshine.voice.JNI;
+import androidx.appcompat.app.AppCompatActivity;
+import android.os.Bundle;
+
+public class TranscriptionActivity extends AppCompatActivity {
+    private Transcriber transcriber;
+    
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        
+        // Initialize transcriber
+        transcriber = new Transcriber();
+        transcriber.loadFromAssets(
+            this,
+            "models",
+            JNI.MOONSHINE_MODEL_ARCH_TINY
+        );
+        
+        // Add event listener
+        transcriber.addListener(event -> {
+            event.accept(new TranscriptEvent.Visitor() {
+                @Override
+                public void onLineStarted(TranscriptEvent.LineStarted e) {
+                    runOnUiThread(() -> {
+                        updateUI("Started: " + e.line.text);
+                    });
+                }
+                
+                @Override
+                public void onLineTextChanged(TranscriptEvent.LineTextChanged e) {
+                    runOnUiThread(() -> {
+                        updateUI(e.line.text);
+                    });
+                }
+                
+                @Override
+                public void onLineCompleted(TranscriptEvent.LineCompleted e) {
+                    runOnUiThread(() -> {
+                        updateUI("Final: " + e.line.text);
+                    });
+                }
+                
+                @Override
+                public void onLineUpdated(TranscriptEvent.LineUpdated e) {}
+                
+                @Override
+                public void onError(TranscriptEvent.Error e) {
+                    runOnUiThread(() -> {
+                        showError(e.cause.getMessage());
+                    });
+                }
+            });
+        });
+        
+        // Start transcription
+        transcriber.start();
+        
+        // Feed audio data (typically from microphone)
+        // float[] audioData = ...
+        // transcriber.addAudio(audioData, 16000);
+    }
+    
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        if (transcriber != null) {
+            transcriber.stop();
+        }
+    }
+    
+    private void updateUI(String text) {
+        // Update your UI here
+    }
+    
+    private void showError(String message) {
+        // Show error to user
+    }
+}
+```
+
+## Thread Safety
+
+The Transcriber class uses thread-safe collections for listeners and completed lines tracking. However, you should be careful when updating UI from event callbacks, as they may be called from background threads. Use `runOnUiThread()` in Android activities or appropriate synchronization mechanisms.

@@ -1,0 +1,497 @@
+---
+title: Model Architectures
+description: Understanding Moonshine ASR model architectures and choosing the right model for your application
+---
+
+## Overview
+
+Moonshine Voice offers a family of speech-to-text models trained from scratch, optimized for different accuracy/performance trade-offs. All models support flexible input windows and are designed for edge deployment.
+
+## Model Families
+
+From `core/moonshine-c-api.h:97-103`:
+
+```c
+/* Supported model architectures. */
+#define MOONSHINE_MODEL_ARCH_TINY (0)
+#define MOONSHINE_MODEL_ARCH_BASE (1)
+#define MOONSHINE_MODEL_ARCH_TINY_STREAMING (2)
+#define MOONSHINE_MODEL_ARCH_BASE_STREAMING (3)
+#define MOONSHINE_MODEL_ARCH_SMALL_STREAMING (4)
+#define MOONSHINE_MODEL_ARCH_MEDIUM_STREAMING (5)
+```
+
+Two main families:
+
+1. **Non-Streaming**: Process complete audio segments
+2. **Streaming**: Cache encoder/decoder state for incremental processing
+
+## Available Models
+
+From README.md:566-580, current English models:
+
+| Architecture         | Parameters | WER     | Use Case                          |
+|---------------------|------------|---------|-----------------------------------|
+| Tiny                | 26M        | 12.66%  | Ultra-constrained devices         |
+| **Tiny Streaming**  | 34M        | 12.00%  | **IoT, wearables, real-time**     |
+| Base                | 58M        | 10.07%  | Offline transcription             |
+| Base Streaming      | ~60M       | ~10%    | Balanced streaming                |
+| **Small Streaming** | 123M       | 7.84%   | **Desktop apps, real-time**       |
+| **Medium Streaming**| 245M       | 6.65%   | **High accuracy, real-time**      |
+
+<Info>
+  **Medium Streaming** achieves 6.65% WER - better than Whisper Large v3's 7.44% - with 6x fewer parameters (245M vs 1.5B).
+</Info>
+
+### Non-English Models
+
+From README.md:566-580:
+
+| Language   | Architecture | Parameters | WER/CER | Notes                          |
+|------------|--------------|------------|---------|--------------------------------|
+| Arabic     | Base         | 58M        | 5.63%   | Character Error Rate           |
+| Japanese   | Base         | 58M        | 13.62%  | Character Error Rate           |
+| Korean     | Tiny         | 26M        | 6.46%   | Character Error Rate           |
+| Mandarin   | Base         | 58M        | 25.76%  | Character Error Rate           |
+| Spanish    | Base         | 58M        | 4.33%   | Word Error Rate                |
+| Ukrainian  | Base         | 58M        | 14.55%  | Word Error Rate                |
+| Vietnamese | Base         | 58M        | 8.82%   | Word Error Rate                |
+
+<Tip>
+  For non-Latin alphabet languages, set `max_tokens_per_second` to 13.0 to avoid truncating valid outputs (default is 6.5 for English).
+</Tip>
+
+## Model Architecture Details
+
+### Components
+
+All Moonshine models consist of three files:
+
+1. **encoder_model.ort**: Audio → Latent representation
+2. **decoder_model_merged.ort**: Latent → Token sequence  
+3. **tokenizer.bin**: Tokens → UTF-8 text
+
+From `core/moonshine-c-api.h:227-243`:
+
+```c
+/* Loads models from the file system, using `path` as the root directory. The
+   implementation expects the following files to be present in the directory:
+   - encoder_model.ort
+   - decoder_model_merged.ort
+   - tokenizer.bin
+   The .ort files are quantized activation ONNX models that have been converted
+   to ORT format using the onnxruntime tools. */
+```
+
+### Encoder Architecture
+
+From README.md:591-593:
+
+**Frontend (Preprocessing):**
+- Learned convolution layers generate features
+- Similar to MEL spectrograms but trained end-to-end
+- Operates on 16-bit raw audio input
+- Preserved at BFloat16 precision for accuracy
+
+**Encoder Backbone:**
+- Transformer architecture
+- Variable-length input support
+- No zero-padding required (unlike Whisper)
+- Outputs latent representation
+
+### Decoder Architecture
+
+**Autoregressive decoder:**
+- Takes encoder output + previous tokens
+- Generates next token predictions
+- Streaming models cache decoder state
+
+**Token generation:**
+- Beam search or greedy decoding
+- Temperature-based sampling
+- Length normalization
+
+### Tokenizer
+
+From `core/moonshine-c-api.h:241-243`:
+
+> The tokenizer.bin contains the token to character mapping for the model, in a compact binary format.
+
+Language-specific tokenizers:
+- English: ~500 tokens (subword units)
+- Non-Latin: Larger vocabulary for character coverage
+
+## Performance Characteristics
+
+### Latency Comparison
+
+From README.md:101-108:
+
+**MacBook Pro M1:**
+
+| Model                   | Latency | Speed vs Whisper |
+|-------------------------|---------|------------------|
+| Tiny Streaming          | 34ms    | 8x faster        |
+| Small Streaming         | 73ms    | 26x faster       |
+| Medium Streaming        | 107ms   | 105x faster      |
+| Whisper Tiny            | 277ms   | -                |
+| Whisper Small           | 1940ms  | -                |
+| Whisper Large v3        | 11286ms | -                |
+
+**Raspberry Pi 5:**
+
+| Model                   | Latency | Usable?          |
+|-------------------------|---------|------------------|
+| Tiny Streaming          | 237ms   | ✅ Yes           |
+| Small Streaming         | 527ms   | ✅ Yes           |
+| Medium Streaming        | 802ms   | ⚠️  Marginal     |
+| Whisper Tiny            | 5863ms  | ❌ No            |
+| Whisper Small           | 10397ms | ❌ No            |
+
+### Memory Usage
+
+**Model file sizes (quantized):**
+
+```python
+import os
+from moonshine_voice import get_model_path
+
+model_path = get_model_path("en", ModelArch.SMALL_STREAMING)
+for filename in os.listdir(model_path):
+    size_mb = os.path.getsize(os.path.join(model_path, filename)) / 1024 / 1024
+    print(f"{filename}: {size_mb:.1f} MB")
+
+# Output:
+# encoder_model.ort: 29.9 MB
+# decoder_model_merged.ort: 104.0 MB
+# tokenizer.bin: 0.2 MB
+# Total: ~134 MB
+```
+
+Typical sizes:
+- Tiny: ~30 MB total
+- Base: ~70 MB total
+- Small Streaming: ~134 MB total
+- Medium Streaming: ~270 MB total
+
+**Runtime memory:**
+- Input audio buffer: ~2-5 MB
+- Encoder cache (streaming): ~10-50 MB
+- Decoder state (streaming): ~5-20 MB
+- Total runtime: 50-300 MB depending on model
+
+## Model Selection Guide
+
+### By Platform
+
+```python
+import platform
+import psutil
+
+def select_model():
+    """Choose model based on hardware."""
+    machine = platform.machine()
+    ram_gb = psutil.virtual_memory().total / (1024**3)
+    
+    # Embedded/IoT
+    if machine in ['armv7l', 'armv6l']:
+        return ModelArch.TINY_STREAMING
+    
+    # Raspberry Pi
+    elif machine == 'aarch64' and ram_gb < 4:
+        return ModelArch.TINY_STREAMING
+    
+    # Raspberry Pi with 8GB
+    elif machine == 'aarch64' and ram_gb >= 4:
+        return ModelArch.SMALL_STREAMING
+    
+    # Mobile (iOS/Android)
+    elif platform.system() in ['iOS', 'Android']:
+        if ram_gb < 4:
+            return ModelArch.TINY_STREAMING
+        else:
+            return ModelArch.SMALL_STREAMING
+    
+    # Desktop/Laptop
+    else:
+        if ram_gb < 8:
+            return ModelArch.SMALL_STREAMING
+        else:
+            return ModelArch.MEDIUM_STREAMING
+```
+
+### By Use Case
+
+**Real-time voice assistants:**
+```python
+model_arch = ModelArch.SMALL_STREAMING  # Best balance
+```
+
+**High-accuracy transcription:**
+```python
+model_arch = ModelArch.MEDIUM_STREAMING  # Better than Whisper Large
+```
+
+**Wearables/IoT:**
+```python
+model_arch = ModelArch.TINY_STREAMING  # Fits on constrained devices
+```
+
+**Offline file transcription:**
+```python
+model_arch = ModelArch.BASE  # Non-streaming for batch processing
+```
+
+**Multilingual app:**
+```python
+# Load different models per language
+en_transcriber = Transcriber(en_path, ModelArch.MEDIUM_STREAMING)
+es_transcriber = Transcriber(es_path, ModelArch.BASE)
+ja_transcriber = Transcriber(ja_path, ModelArch.BASE)
+```
+
+## Quantization
+
+From README.md:589-594:
+
+> We typically quantize our models to eight-bit weights across the board, and eight-bit calculations for heavy operations like MatMul.
+
+### Quantization Strategy
+
+**Weights:** 8-bit integer quantization
+**Activations:** 8-bit for MatMul operations  
+**Frontend:** BFloat16 precision (higher accuracy needed)
+
+**File format:** ONNX models converted to `.ort` flatbuffer format for:
+- Memory-mapped loading
+- Zero-copy inference
+- Reduced startup time
+
+### Quantization Impact
+
+From README.md:590-594:
+
+> The only anomaly is the treatment of the frontend, which uses convolution layers to generate features. The inputs correspond to 16-bit signed integers from raw audio, so we've found it necessary to leave convolution operations in at least BFloat16 precision.
+
+**Quality retention:**
+- WER impact: Less than 0.5% absolute
+- Latency improvement: 2-3x faster
+- Memory reduction: 4x smaller
+
+## Training and Research
+
+### Research Papers
+
+From README.md:554-560:
+
+1. **Moonshine (2024)**: First generation architecture
+   - Flexible input windows
+   - Improved on Whisper's fixed 30s requirement
+   - [arxiv.org/abs/2410.15608](https://arxiv.org/abs/2410.15608)
+
+2. **Flavors of Moonshine (2025)**: Multilingual approach  
+   - Monolingual models for higher accuracy
+   - Language-specific training benefits
+   - [arxiv.org/abs/2509.02523](https://arxiv.org/abs/2509.02523)
+
+3. **Moonshine v2 (2026)**: Streaming architecture
+   - Ergodic streaming encoder
+   - State caching for latency reduction
+   - [arxiv.org/abs/2602.12241](https://arxiv.org/abs/2602.12241)
+
+### Training Data
+
+From README.md:126:
+
+> After extensive data-gathering work, we were able to release the first generation of Moonshine models.
+
+- Large proprietary audio dataset
+- Multiple languages and accents
+- Real-world noise conditions
+- Trained from scratch (not fine-tuned from Whisper)
+
+### Model Customization
+
+From README.md:585-587:
+
+<Note>
+  **Domain Customization**: Moonshine AI offers full retraining using our internal dataset as a commercial service. Community project for fine-tuning: [github.com/pierre-cheneau/finetune-moonshine-asr](https://github.com/pierre-cheneau/finetune-moonshine-asr)
+</Note>
+
+## Loading Models
+
+### From Files
+
+From `python/src/moonshine_voice/transcriber.py:74-126`:
+
+```python
+from moonshine_voice import Transcriber, ModelArch
+
+transcriber = Transcriber(
+    model_path="/path/to/model/directory",  # Contains .ort files
+    model_arch=ModelArch.SMALL_STREAMING,
+    update_interval=0.5,
+    options={}
+)
+```
+
+### From Memory
+
+From `core/moonshine-c-api.h:267-277`:
+
+```c
+int32_t moonshine_load_transcriber_from_memory(
+    const uint8_t *encoder_model_data, size_t encoder_model_data_size,
+    const uint8_t *decoder_model_data, size_t decoder_model_data_size,
+    const uint8_t *tokenizer_data, size_t tokenizer_data_size,
+    uint32_t model_arch,
+    const struct transcriber_option_t *options,
+    uint64_t options_count,
+    int32_t moonshine_version
+);
+```
+
+Useful for:
+- Mobile apps with bundled models
+- Encrypted model storage
+- Custom model distribution
+
+### Download Helper
+
+```python
+from moonshine_voice import get_model_for_language
+
+# Automatically downloads and returns path
+model_path, model_arch = get_model_for_language(
+    wanted_language="en",
+    wanted_model_arch=ModelArch.SMALL_STREAMING
+)
+
+transcriber = Transcriber(model_path, model_arch)
+```
+
+## Model Inference
+
+### ONNXRuntime Backend
+
+From README.md:438:
+
+> The only major dependency that the C++ core library has is [the Onnx Runtime](https://github.com/microsoft/onnxruntime).
+
+**Benefits:**
+- Cross-platform (Linux, macOS, Windows, iOS, Android)
+- CPU optimization (SIMD, threading)
+- Memory-mapped model loading
+- Consistent performance across devices
+
+### Threading
+
+From `core/silero-vad.h:71-72`:
+
+```cpp
+void init_engine_threads(int inter_threads, int intra_threads);
+```
+
+ONNXRuntime uses:
+- **Inter-threads**: Parallelism across model layers
+- **Intra-threads**: Parallelism within operations
+
+Configured automatically based on CPU cores.
+
+## Version Compatibility
+
+From `core/moonshine-c-api.h:89-95`:
+
+```c
+/* What version of the Moonshine library the header file is associated with.
+   You should pass this version to moonshine_load_transcriber so that newer
+   versions of the library can emulate any older behavior that has changed.
+   The format is MAJOR * 10000 + MINOR * 100 + PATCH. */
+#define MOONSHINE_HEADER_VERSION (20000)
+```
+
+Ensures backward compatibility:
+
+```python
+transcriber_handle = lib.moonshine_load_transcriber_from_files(
+    model_path,
+    model_arch,
+    options,
+    options_count,
+    Transcriber.MOONSHINE_HEADER_VERSION  # Always pass this
+)
+```
+
+## Benchmarking Models
+
+From README.md:473-493:
+
+```bash
+cd core
+mkdir build && cd build
+cmake .. -DCMAKE_BUILD_TYPE=Release
+cmake --build .
+./benchmark --model-path /path/to/model --model-arch 4
+```
+
+**Metrics reported:**
+- Absolute time taken
+- Percentage of audio duration
+- Average latency per phrase
+- Compute load percentage
+
+**Python benchmarking:**
+
+```bash
+python scripts/run-benchmarks.py --wav-path test.wav
+```
+
+Compares Moonshine vs Whisper on same audio.
+
+## Model Accuracy
+
+### Evaluation
+
+From README.md:580:
+
+> The English evaluations were done using the [HuggingFace OpenASR Leaderboard](https://huggingface.co/spaces/hf-audio/open_asr_leaderboard) datasets and methodology.
+
+**Test your model:**
+
+```bash
+python scripts/eval-model-accuracy.py \
+    --model-path /path/to/model \
+    --model-arch 4 \
+    --dataset librispeech-test-clean
+```
+
+### WER Interpretation
+
+| WER    | Quality     | Use Case                               |
+|--------|-------------|----------------------------------------|
+| Under 5%    | Excellent   | Professional transcription             |
+| 5-10%  | Very good   | Voice assistants, most applications    |
+| 10-15% | Good        | Casual transcription, commands         |
+| 15-20% | Acceptable  | Constrained devices, noisy environments|
+| Over 20%   | Poor        | Limited use cases                      |
+
+## Future Models
+
+From README.md:741-747 roadmap:
+
+- Binary size reduction for mobile
+- More languages
+- More streaming models
+- Improved speaker identification
+- Lightweight domain customization
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Streaming Concepts" icon="bolt" href="/concepts/streaming">
+    Learn how streaming models work
+  </Card>
+  <Card title="Transcription" icon="microphone" href="/concepts/transcription">
+    Understand the transcription pipeline
+  </Card>
+</CardGroup>

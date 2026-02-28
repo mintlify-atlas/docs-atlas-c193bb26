@@ -1,0 +1,445 @@
+---
+title: "Transcriber"
+description: "C++ API reference for the Transcriber class"
+---
+
+## Overview
+
+The `Transcriber` class is the main entry point for Moonshine Voice in C++. It provides a modern, object-oriented interface with event-driven streaming support.
+
+<Note>
+The C++ API is a header-only library that wraps the Moonshine C API. Include `moonshine-cpp.h` to use it.
+</Note>
+
+## Initialization
+
+### Transcriber Constructor
+
+Initialize a transcriber from model files on disk.
+
+```cpp
+Transcriber(
+    const std::string& modelPath,
+    ModelArch modelArch,
+    double updateInterval = 0.5
+)
+```
+
+<ParamField path="modelPath" type="const std::string&" required>
+  Path to the directory containing model files (encoder_model.ort, decoder_model_merged.ort, tokenizer.bin)
+</ParamField>
+
+<ParamField path="modelArch" type="ModelArch" required>
+  Model architecture to use:
+  - `ModelArch::TINY`
+  - `ModelArch::BASE`
+  - `ModelArch::TINY_STREAMING`
+  - `ModelArch::BASE_STREAMING`
+  - `ModelArch::SMALL_STREAMING`
+  - `ModelArch::MEDIUM_STREAMING`
+</ParamField>
+
+<ParamField path="updateInterval" type="double" default="0.5">
+  Interval in seconds between automatic updates for the default stream
+</ParamField>
+
+**Throws:** `MoonshineException` if the transcriber cannot be loaded
+
+**Example:**
+
+```cpp
+#include "moonshine-cpp.h"
+#include <iostream>
+
+using namespace moonshine;
+
+try {
+    Transcriber transcriber(
+        "/path/to/models",
+        ModelArch::BASE,
+        0.5
+    );
+} catch (const MoonshineException& e) {
+    std::cerr << "Failed to initialize: " << e.what() << std::endl;
+}
+```
+
+## Non-Streaming Transcription
+
+### transcribeWithoutStreaming
+
+Transcribe audio data without streaming.
+
+```cpp
+Transcript transcribeWithoutStreaming(
+    const std::vector<float>& audioData,
+    int32_t sampleRate = 16000,
+    uint32_t flags = 0
+)
+```
+
+<ParamField path="audioData" type="const std::vector<float>&" required>
+  Array of PCM audio samples (float values from -1.0 to 1.0)
+</ParamField>
+
+<ParamField path="sampleRate" type="int32_t" default="16000">
+  Sample rate in Hz
+</ParamField>
+
+<ParamField path="flags" type="uint32_t" default="0">
+  Flags for transcription
+</ParamField>
+
+**Returns:** A `Transcript` object containing the transcription lines
+
+**Throws:** `MoonshineException` if transcription fails
+
+**Example:**
+
+```cpp
+std::vector<float> audioData = // ... load audio data
+
+try {
+    Transcript transcript = transcriber.transcribeWithoutStreaming(
+        audioData,
+        16000
+    );
+    
+    for (const auto& line : transcript.lines) {
+        std::cout << "[" << line.startTime << "s] " 
+                  << line.text << std::endl;
+    }
+} catch (const MoonshineException& e) {
+    std::cerr << "Transcription failed: " << e.what() << std::endl;
+}
+```
+
+## Streaming Transcription (Default Stream)
+
+The transcriber provides convenience methods that operate on a default stream:
+
+### start
+
+Start the default stream.
+
+```cpp
+void start()
+```
+
+**Throws:** `MoonshineException` if starting fails
+
+### stop
+
+Stop the default stream and process any remaining audio.
+
+```cpp
+void stop()
+```
+
+**Throws:** `MoonshineException` if stopping fails
+
+### addAudio
+
+Add audio data to the default stream.
+
+```cpp
+void addAudio(
+    const std::vector<float>& audioData,
+    int32_t sampleRate = 16000
+)
+```
+
+<ParamField path="audioData" type="const std::vector<float>&" required>
+  Array of PCM audio samples (float values from -1.0 to 1.0)
+</ParamField>
+
+<ParamField path="sampleRate" type="int32_t" default="16000">
+  Sample rate in Hz
+</ParamField>
+
+**Throws:** `MoonshineException` if adding audio fails
+
+### updateTranscription
+
+Manually update the transcription from the default stream.
+
+```cpp
+Transcript updateTranscription(uint32_t flags = 0)
+```
+
+<ParamField path="flags" type="uint32_t" default="0">
+  Flags for transcription (e.g., `Transcriber::FLAG_FORCE_UPDATE`)
+</ParamField>
+
+**Returns:** The current transcript
+
+**Throws:** `MoonshineException` if updating fails
+
+## Event Listeners
+
+### addListener (Object-based)
+
+Add a `TranscriptEventListener` object to the default stream.
+
+```cpp
+void addListener(TranscriptEventListener* listener)
+```
+
+<ParamField path="listener" type="TranscriptEventListener*" required>
+  A pointer to a TranscriptEventListener instance
+</ParamField>
+
+**Example:**
+
+```cpp
+class MyListener : public TranscriptEventListener {
+public:
+    void onLineStarted(const LineStarted& event) override {
+        std::cout << "Started: " << event.line.text << std::endl;
+    }
+    
+    void onLineTextChanged(const LineTextChanged& event) override {
+        std::cout << "Updated: " << event.line.text << std::endl;
+    }
+    
+    void onLineCompleted(const LineCompleted& event) override {
+        std::cout << "Completed: " << event.line.text << std::endl;
+    }
+};
+
+MyListener listener;
+transcriber.addListener(&listener);
+```
+
+### addListener (Function-based)
+
+Add a function-based event listener to the default stream.
+
+```cpp
+void addListener(
+    std::function<void(const TranscriptEvent&)> listener
+)
+```
+
+<ParamField path="listener" type="std::function<void(const TranscriptEvent&)>" required>
+  A function that takes a TranscriptEvent reference
+</ParamField>
+
+**Example:**
+
+```cpp
+transcriber.addListener([](const TranscriptEvent& event) {
+    if (event.type == TranscriptEvent::LINE_COMPLETED) {
+        const LineCompleted& completed = 
+            static_cast<const LineCompleted&>(event);
+        std::cout << completed.line.text << std::endl;
+    }
+});
+```
+
+### removeListener
+
+Remove an event listener from the default stream.
+
+```cpp
+void removeListener(TranscriptEventListener* listener)
+void removeListener(
+    std::function<void(const TranscriptEvent&)> listener
+)
+```
+
+### removeAllListeners
+
+Remove all event listeners from the default stream.
+
+```cpp
+void removeAllListeners()
+```
+
+## Stream Management
+
+### createStream
+
+Create a new stream for real-time transcription.
+
+```cpp
+Stream createStream(
+    double updateInterval = 0.5,
+    uint32_t flags = 0
+)
+```
+
+<ParamField path="updateInterval" type="double" default="0.5">
+  Interval in seconds between automatic updates
+</ParamField>
+
+<ParamField path="flags" type="uint32_t" default="0">
+  Flags for stream creation
+</ParamField>
+
+**Returns:** A `Stream` object for real-time transcription
+
+**Throws:** `MoonshineException` if stream creation fails
+
+**Example:**
+
+```cpp
+class StreamListener : public TranscriptEventListener {
+public:
+    void onLineCompleted(const LineCompleted& event) override {
+        std::cout << event.line.text << std::endl;
+    }
+};
+
+Stream stream = transcriber.createStream(0.3);
+StreamListener listener;
+stream.addListener(&listener);
+
+stream.start();
+
+// Feed audio to stream
+std::vector<float> audioData = // ... audio data
+stream.addAudio(audioData, 16000);
+
+stream.stop();
+stream.close();
+```
+
+### getDefaultStream
+
+Get the default stream.
+
+```cpp
+Stream& getDefaultStream()
+```
+
+**Returns:** Reference to the default stream
+
+**Throws:** `MoonshineException` if stream creation fails
+
+## Other Methods
+
+### getVersion
+
+Get the version of the loaded Moonshine library.
+
+```cpp
+int32_t getVersion() const
+```
+
+**Returns:** The version number
+
+**Example:**
+
+```cpp
+std::cout << "Moonshine version: " 
+          << transcriber.getVersion() << std::endl;
+```
+
+### close
+
+Free the transcriber resources.
+
+```cpp
+void close()
+```
+
+<Note>
+The destructor automatically calls `close()`, so manual cleanup is optional.
+</Note>
+
+## Constants
+
+### FLAG_FORCE_UPDATE
+
+Flag to force a transcription update.
+
+```cpp
+static const uint32_t FLAG_FORCE_UPDATE = MOONSHINE_FLAG_FORCE_UPDATE;
+```
+
+**Example:**
+
+```cpp
+Transcript transcript = transcriber.updateTranscription(
+    Transcriber::FLAG_FORCE_UPDATE
+);
+```
+
+## Complete Example
+
+```cpp
+#include "moonshine-cpp.h"
+#include <iostream>
+#include <vector>
+
+using namespace moonshine;
+
+class MyListener : public TranscriptEventListener {
+public:
+    void onLineStarted(const LineStarted& event) override {
+        std::cout << "Started: " << event.line.text << std::endl;
+    }
+    
+    void onLineTextChanged(const LineTextChanged& event) override {
+        std::cout << "Updated: " << event.line.text << std::endl;
+    }
+    
+    void onLineCompleted(const LineCompleted& event) override {
+        std::cout << "Completed: " << event.line.text << std::endl;
+    }
+    
+    void onError(const Error& event) override {
+        std::cerr << "Error: " << event.errorMessage << std::endl;
+    }
+};
+
+int main() {
+    try {
+        // Initialize transcriber
+        Transcriber transcriber(
+            "/path/to/models",
+            ModelArch::BASE
+        );
+        
+        // Add listener
+        MyListener listener;
+        transcriber.addListener(&listener);
+        
+        // Start transcription
+        transcriber.start();
+        
+        // Feed audio data
+        std::vector<float> audioData = // ... load audio
+        transcriber.addAudio(audioData, 16000);
+        
+        // Stop transcription
+        transcriber.stop();
+        
+        // Clean up (optional, destructor will do this)
+        transcriber.close();
+        
+    } catch (const MoonshineException& e) {
+        std::cerr << "Error: " << e.what() << std::endl;
+        return 1;
+    }
+    
+    return 0;
+}
+```
+
+## Move Semantics
+
+The `Transcriber` class supports move semantics but not copying:
+
+```cpp
+// Move construction
+Transcriber transcriber1("/path/to/models", ModelArch::BASE);
+Transcriber transcriber2(std::move(transcriber1));
+
+// Move assignment
+transcriber2 = std::move(transcriber1);
+
+// Copy is deleted
+// Transcriber transcriber3 = transcriber1; // ERROR
+```

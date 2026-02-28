@@ -1,0 +1,383 @@
+---
+title: "Data Structures"
+description: "Swift API reference for Moonshine Voice data structures"
+---
+
+## TranscriptLine
+
+A single line of transcription representing a phrase or segment of speech.
+
+```swift
+public struct TranscriptLine
+```
+
+### Properties
+
+<ParamField path="text" type="String">
+  UTF-8 encoded transcription text
+</ParamField>
+
+<ParamField path="startTime" type="Float">
+  Time offset from the start of the audio in seconds
+</ParamField>
+
+<ParamField path="duration" type="Float">
+  Duration of the segment in seconds
+</ParamField>
+
+<ParamField path="lineId" type="UInt64">
+  Stable identifier for the line (unique within a session)
+</ParamField>
+
+<ParamField path="isComplete" type="Bool">
+  Whether the line is complete. When `true`, the text will not change anymore.
+</ParamField>
+
+<ParamField path="isUpdated" type="Bool">
+  Whether the line has been updated since the previous call (streaming only)
+</ParamField>
+
+<ParamField path="isNew" type="Bool">
+  Whether the line was newly added since the previous call (streaming only)
+</ParamField>
+
+<ParamField path="hasTextChanged" type="Bool">
+  Whether the text has changed since the previous call (streaming only)
+</ParamField>
+
+<ParamField path="hasSpeakerId" type="Bool">
+  Whether a speaker ID has been calculated for the line
+</ParamField>
+
+<ParamField path="speakerId" type="UInt64">
+  The speaker ID for the line (only valid if `hasSpeakerId` is `true`)
+</ParamField>
+
+<ParamField path="speakerIndex" type="UInt32">
+  The order the speaker appeared in the current transcript (0-based)
+</ParamField>
+
+<ParamField path="audioData" type="[Float]?">
+  Audio data for this line if available (16KHz float PCM, -1.0 to 1.0)
+</ParamField>
+
+**Example:**
+
+```swift
+let line: TranscriptLine = // ... from event
+
+print("[\(line.startTime)s] \(line.text)")
+print("Duration: \(line.duration)s")
+print("Complete: \(line.isComplete)")
+
+if line.hasSpeakerId {
+    print("Speaker \(line.speakerIndex + 1)")
+}
+```
+
+## Transcript
+
+A complete transcript containing multiple lines.
+
+```swift
+public struct Transcript
+```
+
+### Properties
+
+<ParamField path="lines" type="[TranscriptLine]">
+  All lines of the transcript in chronological order
+</ParamField>
+
+**Example:**
+
+```swift
+let transcript = try transcriber.transcribeWithoutStreaming(
+    audioData: audioData,
+    sampleRate: 16000
+)
+
+for line in transcript.lines {
+    print("[\(line.startTime)s] \(line.text)")
+}
+
+let fullText = transcript.lines.map { $0.text }.joined(separator: " ")
+print("Full transcript: \(fullText)")
+```
+
+## TranscriptEvent (Protocol)
+
+Base protocol for all transcript events.
+
+```swift
+public protocol TranscriptEvent
+```
+
+### Properties
+
+<ParamField path="line" type="TranscriptLine">
+  The transcript line associated with this event
+</ParamField>
+
+<ParamField path="streamHandle" type="Int32">
+  The handle of the stream that emitted this event
+</ParamField>
+
+## LineStarted
+
+Event emitted when a new transcription line starts.
+
+```swift
+public struct LineStarted: TranscriptEvent
+```
+
+**Example:**
+
+```swift
+func onLineStarted(_ event: LineStarted) {
+    print("New line started: \(event.line.text)")
+}
+```
+
+## LineUpdated
+
+Event emitted when an existing transcription line is updated.
+
+```swift
+public struct LineUpdated: TranscriptEvent
+```
+
+**Example:**
+
+```swift
+func onLineUpdated(_ event: LineUpdated) {
+    print("Line updated: \(event.line.text)")
+}
+```
+
+## LineTextChanged
+
+Event emitted when the text of a transcription line changes.
+
+```swift
+public struct LineTextChanged: TranscriptEvent
+```
+
+**Example:**
+
+```swift
+func onLineTextChanged(_ event: LineTextChanged) {
+    // Update UI with new text
+    updateTranscriptDisplay(event.line.text)
+}
+```
+
+## LineCompleted
+
+Event emitted when a transcription line is completed.
+
+```swift
+public struct LineCompleted: TranscriptEvent
+```
+
+**Example:**
+
+```swift
+func onLineCompleted(_ event: LineCompleted) {
+    print("Final text: \(event.line.text)")
+    // Save to database, process final result, etc.
+}
+```
+
+## TranscriptError
+
+Event emitted when an error occurs.
+
+```swift
+public struct TranscriptError: TranscriptEvent
+```
+
+### Properties
+
+<ParamField path="error" type="Error">
+  The error that occurred
+</ParamField>
+
+**Example:**
+
+```swift
+func onError(_ event: TranscriptError) {
+    print("Error: \(event.error.localizedDescription)")
+}
+```
+
+## TranscriptEventListener (Protocol)
+
+Protocol for objects that listen to transcript events.
+
+```swift
+public protocol TranscriptEventListener: AnyObject
+```
+
+### Methods
+
+All methods have default no-op implementations, so you only need to override the ones you care about.
+
+```swift
+func onLineStarted(_ event: LineStarted)
+func onLineUpdated(_ event: LineUpdated)
+func onLineTextChanged(_ event: LineTextChanged)
+func onLineCompleted(_ event: LineCompleted)
+func onError(_ event: TranscriptError)
+```
+
+**Example:**
+
+```swift
+class MyListener: TranscriptEventListener {
+    // Only implement the events you care about
+    func onLineTextChanged(_ event: LineTextChanged) {
+        print(event.line.text)
+    }
+    
+    func onLineCompleted(_ event: LineCompleted) {
+        print("Final: \(event.line.text)")
+    }
+}
+```
+
+## ModelArch
+
+Model architecture types supported by Moonshine Voice.
+
+```swift
+public enum ModelArch: UInt32
+```
+
+### Cases
+
+<ParamField path="tiny" type="ModelArch">
+  26 million parameters, smallest model
+</ParamField>
+
+<ParamField path="base" type="ModelArch">
+  58 million parameters, good balance of accuracy and speed
+</ParamField>
+
+<ParamField path="tinyStreaming" type="ModelArch">
+  34 million parameters, streaming variant of tiny
+</ParamField>
+
+<ParamField path="baseStreaming" type="ModelArch">
+  58 million parameters, streaming variant of base
+</ParamField>
+
+<ParamField path="smallStreaming" type="ModelArch">
+  123 million parameters, higher accuracy streaming model
+</ParamField>
+
+<ParamField path="mediumStreaming" type="ModelArch">
+  245 million parameters, highest accuracy streaming model
+</ParamField>
+
+**Example:**
+
+```swift
+let transcriber = try Transcriber(
+    modelPath: modelPath,
+    modelArch: .mediumStreaming
+)
+```
+
+## Stream
+
+A stream for real-time transcription with event-based updates.
+
+```swift
+public class Stream
+```
+
+### Methods
+
+#### start()
+
+Start the stream.
+
+```swift
+public func start() throws
+```
+
+#### stop()
+
+Stop the stream and process any remaining audio.
+
+```swift
+public func stop() throws
+```
+
+#### addAudio(_:sampleRate:)
+
+Add audio data to the stream.
+
+```swift
+public func addAudio(_ audioData: [Float], sampleRate: Int32 = 16000) throws
+```
+
+#### updateTranscription(flags:)
+
+Manually update the transcription from the stream.
+
+```swift
+public func updateTranscription(flags: UInt32 = 0) throws -> Transcript
+```
+
+#### addListener(_:)
+
+Add an event listener to the stream.
+
+```swift
+public func addListener(_ listener: @escaping (TranscriptEvent) throws -> Void)
+public func addListener(_ listener: TranscriptEventListener)
+```
+
+#### removeListener(_:)
+
+Remove an event listener from the stream.
+
+```swift
+public func removeListener(_ listener: @escaping (TranscriptEvent) throws -> Void)
+public func removeListener(_ listener: TranscriptEventListener)
+```
+
+#### removeAllListeners()
+
+Remove all event listeners.
+
+```swift
+public func removeAllListeners()
+```
+
+#### close()
+
+Close the stream and free its resources.
+
+```swift
+public func close()
+```
+
+**Example:**
+
+```swift
+let stream = try transcriber.createStream(updateInterval: 0.3)
+
+stream.addListener { event in
+    if let completed = event as? LineCompleted {
+        print(completed.line.text)
+    }
+}
+
+try stream.start()
+try stream.addAudio(audioData, sampleRate: 16000)
+try stream.stop()
+stream.close()
+```

@@ -1,0 +1,261 @@
+---
+title: "MicTranscriber"
+description: "Swift API reference for the MicTranscriber class"
+---
+
+## Overview
+
+The `MicTranscriber` class is a helper class that automatically captures audio from the system microphone and feeds it to a transcriber. It handles all the platform-specific audio capture code for iOS and macOS.
+
+## Initialization
+
+### init(modelPath:modelArch:updateInterval:sampleRate:channels:bufferSize:options:)
+
+Initialize a MicTranscriber.
+
+```swift
+public init(
+    modelPath: String,
+    modelArch: ModelArch = .tiny,
+    updateInterval: TimeInterval = 0.5,
+    sampleRate: Double = 16000,
+    channels: Int = 1,
+    bufferSize: AVAudioFrameCount = 1024,
+    options: [TranscriberOption]? = nil
+) throws
+```
+
+<ParamField path="modelPath" type="String" required>
+  Path to the directory containing model files
+</ParamField>
+
+<ParamField path="modelArch" type="ModelArch" default=".tiny">
+  Model architecture to use. Options: `.tiny`, `.base`, `.tinyStreaming`, `.baseStreaming`, `.smallStreaming`, `.mediumStreaming`
+</ParamField>
+
+<ParamField path="updateInterval" type="TimeInterval" default="0.5">
+  Interval in seconds between automatic transcription updates
+</ParamField>
+
+<ParamField path="sampleRate" type="Double" default="16000">
+  Sample rate in Hz
+</ParamField>
+
+<ParamField path="channels" type="Int" default="1">
+  Number of audio channels (currently only mono is supported for transcription)
+</ParamField>
+
+<ParamField path="bufferSize" type="AVAudioFrameCount" default="1024">
+  Buffer size in frames for audio capture
+</ParamField>
+
+<ParamField path="options" type="[TranscriberOption]?">
+  Optional transcriber options for advanced configuration
+</ParamField>
+
+**Throws:** `MoonshineError` if the transcriber cannot be loaded
+
+**Example:**
+
+```swift
+import MoonshineVoice
+
+do {
+    let micTranscriber = try MicTranscriber(
+        modelPath: "/path/to/models",
+        modelArch: .tiny,
+        updateInterval: 0.5
+    )
+} catch {
+    print("Failed to initialize MicTranscriber: \(error)")
+}
+```
+
+## Audio Capture Control
+
+### start()
+
+Start listening to the microphone and begin transcription.
+
+```swift
+public func start() throws
+```
+
+**Throws:** `MoonshineError` or `AVAudioSessionError` if starting fails
+
+**Note:** This method will request microphone permission if it hasn't been granted yet. On iOS/tvOS/watchOS, it uses `AVAudioSession`. On macOS, it uses `AVCaptureDevice`.
+
+**Example:**
+
+```swift
+do {
+    try micTranscriber.start()
+    print("Listening to microphone...")
+} catch {
+    print("Failed to start: \(error)")
+}
+```
+
+### stop()
+
+Stop listening to the microphone and stop transcription.
+
+```swift
+public func stop() throws
+```
+
+**Throws:** `MoonshineError` if stopping fails
+
+**Example:**
+
+```swift
+do {
+    try micTranscriber.stop()
+    print("Stopped listening")
+} catch {
+    print("Failed to stop: \(error)")
+}
+```
+
+### close()
+
+Close the transcriber and free resources.
+
+```swift
+public func close()
+```
+
+**Note:** This method automatically calls `stop()` if the transcriber is currently listening.
+
+## Event Listeners
+
+### addListener(_:)
+
+Add an event listener to receive transcription events. Supports both closure-based and protocol-based listeners.
+
+```swift
+public func addListener(_ listener: @escaping (TranscriptEvent) throws -> Void)
+public func addListener(_ listener: TranscriptEventListener)
+```
+
+**Example with closure:**
+
+```swift
+micTranscriber.addListener { event in
+    if let lineCompleted = event as? LineCompleted {
+        print("\(lineCompleted.line.text)")
+    }
+}
+```
+
+**Example with protocol:**
+
+```swift
+class MyListener: TranscriptEventListener {
+    func onLineTextChanged(_ event: LineTextChanged) {
+        print("\(event.line.text)")
+    }
+    
+    func onLineCompleted(_ event: LineCompleted) {
+        print("Final: \(event.line.text)")
+    }
+}
+
+let listener = MyListener()
+micTranscriber.addListener(listener)
+```
+
+### removeListener(_:)
+
+Remove an event listener.
+
+```swift
+public func removeListener(_ listener: @escaping (TranscriptEvent) throws -> Void)
+public func removeListener(_ listener: TranscriptEventListener)
+```
+
+### removeAllListeners()
+
+Remove all event listeners.
+
+```swift
+public func removeAllListeners()
+```
+
+## Complete Example
+
+```swift
+import MoonshineVoice
+
+class TranscriptionDelegate: TranscriptEventListener {
+    func onLineStarted(_ event: LineStarted) {
+        print("[Started] \(event.line.text)")
+    }
+    
+    func onLineTextChanged(_ event: LineTextChanged) {
+        // Update UI with interim results
+        print("[Interim] \(event.line.text)")
+    }
+    
+    func onLineCompleted(_ event: LineCompleted) {
+        // Display final result
+        print("[Final] \(event.line.text)")
+    }
+    
+    func onError(_ event: TranscriptError) {
+        print("[Error] \(event.error)")
+    }
+}
+
+do {
+    // Initialize MicTranscriber
+    let micTranscriber = try MicTranscriber(
+        modelPath: Bundle.main.path(forResource: "models", ofType: nil)!,
+        modelArch: .tiny,
+        updateInterval: 0.5
+    )
+    
+    // Add event listener
+    let delegate = TranscriptionDelegate()
+    micTranscriber.addListener(delegate)
+    
+    // Start listening
+    try micTranscriber.start()
+    
+    // ... let it run for a while ...
+    
+    // Stop listening
+    try micTranscriber.stop()
+    
+    // Clean up
+    micTranscriber.close()
+} catch {
+    print("Error: \(error)")
+}
+```
+
+## Platform-Specific Notes
+
+### iOS/tvOS/watchOS
+
+- Uses `AVAudioSession` for microphone access
+- Requires microphone permission in Info.plist: `NSMicrophoneUsageDescription`
+- Audio session is automatically configured with `.record` category
+- Audio session is deactivated when `stop()` is called
+
+### macOS
+
+- Uses `AVCaptureDevice` for permission checking
+- Requires microphone permission in Info.plist: `NSMicrophoneUsageDescription`
+- Uses `AVAudioEngine` for audio capture
+
+## Microphone Permissions
+
+Before using `MicTranscriber`, ensure you've added the appropriate permission description to your Info.plist:
+
+```xml
+<key>NSMicrophoneUsageDescription</key>
+<string>This app needs microphone access for speech transcription</string>
+```
+
+The `start()` method will automatically request permission if it hasn't been granted. If permission is denied, it will throw a `MoonshineError`.

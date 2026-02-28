@@ -1,0 +1,358 @@
+---
+title: 'Microphone Transcription'
+description: 'Transcribe live speech from microphone input in real-time'
+---
+
+The `MicTranscriber` class provides a convenient wrapper around the `Transcriber` for capturing and transcribing live audio from your system's microphone.
+
+## Quick Start
+
+<Steps>
+  <Step title="Download a model">
+    ```bash
+    python -m moonshine_voice.download --language en
+    ```
+  </Step>
+
+  <Step title="Run the microphone transcriber">
+    ```bash
+    python -m moonshine_voice.mic_transcriber --language en
+    ```
+
+    This will start listening to your default microphone and display transcriptions in real-time.
+  </Step>
+</Steps>
+
+## Basic Usage
+
+Create a microphone transcriber and add event listeners:
+
+```python
+from moonshine_voice import MicTranscriber, TranscriptEventListener, ModelArch
+from moonshine_voice import get_model_for_language
+import time
+
+# Get model path and architecture
+model_path, model_arch = get_model_for_language("en")
+
+# Create microphone transcriber
+mic_transcriber = MicTranscriber(
+    model_path=model_path,
+    model_arch=model_arch
+)
+
+# Define event listener
+class MyListener(TranscriptEventListener):
+    def on_line_completed(self, event):
+        print(f"Transcription: {event.line.text}")
+
+mic_transcriber.add_listener(MyListener())
+
+# Start listening
+mic_transcriber.start()
+
+try:
+    while True:
+        time.sleep(0.1)
+except KeyboardInterrupt:
+    mic_transcriber.stop()
+    mic_transcriber.close()
+```
+
+## Configuration Options
+
+Customize the microphone transcriber with these parameters:
+
+```python
+mic_transcriber = MicTranscriber(
+    model_path=model_path,
+    model_arch=ModelArch.TINY_STREAMING,
+    update_interval=0.5,    # How often to update transcription (seconds)
+    device=None,            # Audio device index (None = default)
+    samplerate=16000,       # Sample rate in Hz
+    channels=1,             # Number of audio channels (mono)
+    blocksize=1024          # Audio buffer size
+)
+```
+
+### Audio Device Selection
+
+To list available audio devices:
+
+```python
+import sounddevice as sd
+
+# List all audio devices
+print(sd.query_devices())
+
+# Use a specific device by index
+mic_transcriber = MicTranscriber(
+    model_path=model_path,
+    model_arch=model_arch,
+    device=2  # Use device at index 2
+)
+```
+
+<Tip>
+  Set `device=None` (default) to use your system's default microphone.
+</Tip>
+
+## Terminal Display with Live Updates
+
+Create an interactive terminal display that updates in real-time:
+
+```python
+import sys
+from moonshine_voice import TranscriptEventListener, TranscriptLine
+
+class TerminalListener(TranscriptEventListener):
+    def __init__(self):
+        self.last_line_text_length = 0
+
+    def update_last_terminal_line(self, line: TranscriptLine):
+        # Add speaker prefix if available
+        if line.has_speaker_id:
+            speaker_prefix = f"Speaker #{line.speaker_index}: "
+        else:
+            speaker_prefix = ""
+        
+        new_text = f"{speaker_prefix}{line.text}"
+        
+        # Overwrite previous line using carriage return
+        print(f"\r{new_text}", end="", flush=True)
+        
+        # Clear any remaining characters from previous line
+        if len(new_text) < self.last_line_text_length:
+            diff = self.last_line_text_length - len(new_text)
+            print(f"{' ' * diff}", end="", flush=True)
+        
+        self.last_line_text_length = len(new_text)
+
+    def on_line_started(self, event):
+        self.last_line_text_length = 0
+
+    def on_line_text_changed(self, event):
+        self.update_last_terminal_line(event.line)
+
+    def on_line_completed(self, event):
+        self.update_last_terminal_line(event.line)
+        print("\n", end="", flush=True)  # New line after completion
+
+# Use terminal listener for interactive display
+if sys.stdout.isatty():
+    listener = TerminalListener()
+else:
+    # Fallback for non-terminal output
+    class FileListener(TranscriptEventListener):
+        def on_line_completed(self, event):
+            print(event.line.text)
+    listener = FileListener()
+
+mic_transcriber.add_listener(listener)
+```
+
+<Note>
+  The terminal listener uses carriage returns (`\r`) to overwrite the current line, providing a smooth real-time update experience.
+</Note>
+
+## Event Listeners
+
+The `MicTranscriber` supports the same event listener interface as `Transcriber`:
+
+```python
+class DetailedListener(TranscriptEventListener):
+    def on_line_started(self, event):
+        print(f"\n[Started] {event.line.text}")
+
+    def on_line_text_changed(self, event):
+        print(f"[Update] {event.line.text}")
+
+    def on_line_completed(self, event):
+        line = event.line
+        print(f"[Done] {line.text}")
+        print(f"  Duration: {line.duration:.2f}s")
+        print(f"  Latency: {line.last_transcription_latency_ms:.0f}ms")
+
+    def on_error(self, event):
+        print(f"Error: {event.error}")
+```
+
+## Managing Listeners
+
+Add, remove, and manage event listeners:
+
+```python
+# Add a listener
+listener = MyListener()
+mic_transcriber.add_listener(listener)
+
+# Remove a specific listener
+mic_transcriber.remove_listener(listener)
+
+# Remove all listeners
+mic_transcriber.remove_all_listeners()
+```
+
+## Command Line Options
+
+### Basic usage
+
+```bash
+# Use English model
+python -m moonshine_voice.mic_transcriber --language en
+
+# Use Spanish model
+python -m moonshine_voice.mic_transcriber --language es
+
+# Use a specific model architecture
+python -m moonshine_voice.mic_transcriber --language en --model-arch 3
+```
+
+### Available model architectures
+
+- `0` - TINY (26M params, fastest)
+- `1` - BASE (58M params)
+- `2` - TINY_STREAMING (34M params)
+- `3` - SMALL_STREAMING (123M params)
+- `4` - MEDIUM_STREAMING (245M params, most accurate)
+
+## Audio Processing Pipeline
+
+The `MicTranscriber` handles audio capture automatically:
+
+1. **Audio Capture**: Uses `sounddevice` to capture from microphone
+2. **Format Conversion**: Converts to float32 mono audio
+3. **Streaming**: Feeds audio to the underlying transcriber stream
+4. **Transcription**: Processes audio with configured update interval
+5. **Events**: Dispatches events to registered listeners
+
+```python
+# The audio callback is handled internally
+def audio_callback(in_data, frames, time, status):
+    if status:
+        print(f"Audio status: {status}")
+    audio_data = in_data.astype(np.float32).flatten()
+    self.mic_stream.add_audio(audio_data, self._samplerate)
+```
+
+## Controlling Transcription
+
+```python
+# Start listening and transcribing
+mic_transcriber.start()
+
+# Stop transcribing (keeps resources allocated)
+mic_transcriber.stop()
+
+# Clean up resources
+mic_transcriber.close()
+```
+
+<Warning>
+  Always call `close()` when done to properly release microphone and model resources.
+</Warning>
+
+## Handling Audio Issues
+
+If you encounter audio problems:
+
+```python
+import sounddevice as sd
+
+# Check default device
+print("Default device:", sd.default.device)
+
+# Test audio capture
+def test_audio():
+    duration = 2  # seconds
+    print("Recording test...")
+    recording = sd.rec(int(duration * 16000), samplerate=16000, channels=1)
+    sd.wait()
+    print(f"Captured {len(recording)} samples")
+    return recording
+
+test_audio()
+```
+
+## Sample Rate Considerations
+
+<Tip>
+  Moonshine models work best with 16kHz sample rate audio. The `MicTranscriber` defaults to 16000 Hz, which is optimal for speech recognition.
+</Tip>
+
+If you need to use a different sample rate:
+
+```python
+mic_transcriber = MicTranscriber(
+    model_path=model_path,
+    model_arch=model_arch,
+    samplerate=48000  # Higher quality capture
+)
+```
+
+<Note>
+  The library automatically handles sample rate conversion, so you can feed in audio at any rate.
+</Note>
+
+## Integration Example
+
+Complete example with error handling:
+
+```python
+from moonshine_voice import MicTranscriber, TranscriptEventListener
+from moonshine_voice import get_model_for_language
+import time
+import sys
+
+class RobustListener(TranscriptEventListener):
+    def on_line_completed(self, event):
+        try:
+            print(event.line.text)
+        except Exception as e:
+            print(f"Error processing line: {e}", file=sys.stderr)
+
+    def on_error(self, event):
+        print(f"Transcription error: {event.error}", file=sys.stderr)
+
+def main():
+    try:
+        # Load model
+        print("Loading model...", file=sys.stderr)
+        model_path, model_arch = get_model_for_language("en")
+        
+        # Create transcriber
+        mic_transcriber = MicTranscriber(
+            model_path=model_path,
+            model_arch=model_arch,
+            update_interval=0.5
+        )
+        
+        # Add listener
+        mic_transcriber.add_listener(RobustListener())
+        
+        # Start listening
+        print("Listening... (Press Ctrl+C to stop)", file=sys.stderr)
+        mic_transcriber.start()
+        
+        # Keep running
+        while True:
+            time.sleep(0.1)
+            
+    except KeyboardInterrupt:
+        print("\nStopping...", file=sys.stderr)
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+    finally:
+        mic_transcriber.stop()
+        mic_transcriber.close()
+
+if __name__ == "__main__":
+    main()
+```
+
+## See Also
+
+- [Transcription Guide](/guides/transcription) - Core transcription concepts
+- [Command Recognition](/guides/command-recognition) - Build voice command interfaces
+- [Streaming Guide](/guides/streaming) - Advanced streaming patterns
+- [Debugging Guide](/guides/debugging) - Troubleshoot audio issues

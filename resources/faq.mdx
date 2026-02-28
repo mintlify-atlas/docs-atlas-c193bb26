@@ -1,0 +1,334 @@
+---
+title: FAQ
+description: Frequently asked questions about Moonshine Voice
+---
+
+Answers to common questions about Moonshine Voice.
+
+## General Questions
+
+<AccordionGroup>
+  <Accordion title="When should I choose Moonshine over Whisper?">
+    **TL;DR** - When you're working with live speech.
+
+    Moonshine is specifically optimized for real-time voice applications, while Whisper excels at batch processing. Here's why Moonshine is better for live speech:
+
+    **1. Flexible Input Windows**
+    - Whisper always operates on a 30-second input window, wasting computation on padding
+    - Moonshine accepts any length of audio, spending compute only on actual speech
+    - Result: Much lower latency on short phrases (most voice interfaces)
+
+    **2. Caching for Streaming**
+    - Whisper starts from scratch on every call, even for repeated audio
+    - Moonshine caches encoding and decoder state, skipping redundant work
+    - Result: Can provide updates while the user is still talking
+
+    **3. Better Accuracy-to-Size Ratio**
+    - Moonshine Medium Streaming: 6.65% WER, 245M parameters
+    - Whisper Large v3: 7.44% WER, 1.5B parameters
+    - Moonshine achieves higher accuracy with 6x fewer parameters
+
+    **4. Speed Comparison**
+
+    | Model | WER | Parameters | MacBook Pro | Linux x86 | Raspberry Pi 5 |
+    |-------|-----|------------|-------------|-----------|----------------|
+    | Moonshine Medium Streaming | 6.65% | 245M | 107ms | 269ms | 802ms |
+    | Whisper Large v3 | 7.44% | 1.5B | 11,286ms | 16,919ms | N/A |
+    | Moonshine Small Streaming | 7.84% | 123M | 73ms | 165ms | 527ms |
+    | Whisper Small | 8.59% | 244M | 1940ms | 3,425ms | 10,397ms |
+
+    **Choose Whisper if**: You're doing bulk offline processing with GPUs where throughput matters more than latency.
+
+    **Choose Moonshine if**: You're building voice interfaces that need to respond quickly to users.
+  </Accordion>
+
+  <Accordion title="What languages does Moonshine support?">
+    Moonshine Voice currently supports:
+
+    - **English** (Tiny, Tiny Streaming, Base, Small Streaming, Medium Streaming)
+    - **Arabic** (Base)
+    - **Japanese** (Base)
+    - **Korean** (Tiny)
+    - **Mandarin Chinese** (Base)
+    - **Spanish** (Base)
+    - **Ukrainian** (Base)
+    - **Vietnamese** (Base)
+
+    Each language has dedicated models trained specifically for that language, providing better accuracy than multilingual models of the same size.
+
+    See [Models](/models/overview) for accuracy benchmarks and model details.
+  </Accordion>
+
+  <Accordion title="What platforms does Moonshine support?">
+    Moonshine Voice runs on:
+
+    - **Python** (pip install)
+    - **iOS** (Swift Package Manager)
+    - **Android** (Maven)
+    - **macOS** (Swift Package Manager)
+    - **Linux** (x86_64, ARM)
+    - **Windows** (Visual Studio)
+    - **Raspberry Pi** (ARM)
+    - **IoT devices** (via C++ core)
+
+    The same API works across all platforms with native language bindings.
+  </Accordion>
+
+  <Accordion title="Does Moonshine require an internet connection?">
+    No! Everything runs on-device:
+    - No API keys required
+    - No account or credit card needed
+    - Complete privacy - audio never leaves your device
+    - Works offline
+    - No usage limits or quotas
+
+    You only need internet to download models initially.
+  </Accordion>
+
+  <Accordion title="What are the license terms?">
+    **Code and English Models**: MIT License
+    - Free for any use (commercial or non-commercial)
+    - Modify, distribute, use privately
+
+    **Non-English Models**: Moonshine Community License
+    - Free for research and non-commercial use
+    - Free for commercial use if revenue < $1,000,000 USD/year
+    - Commercial license required if revenue ≥ $1,000,000 USD/year
+
+    See the [LICENSE](https://github.com/moonshine-ai/moonshine/blob/main/LICENSE) file for full terms.
+  </Accordion>
+</AccordionGroup>
+
+## Technical Questions
+
+<AccordionGroup>
+  <Accordion title="How do I improve transcription accuracy?">
+    **1. Use the Right Model**
+    - Larger models = better accuracy
+    - Language-specific models outperform multilingual models
+    - Choose based on your accuracy vs. speed tradeoff
+
+    **2. Optimize Audio Quality**
+    - Use a good microphone
+    - Minimize background noise
+    - Test with `save_input_wav_path` option to verify audio quality
+
+    **3. Adjust VAD Settings**
+    ```python
+    transcriber = Transcriber(
+        model_path=model_path,
+        model_arch=model_arch,
+        options={
+            "vad_threshold": "0.5",  # Lower = longer segments
+            "vad_window_duration": "0.5",  # Smoothing window
+        }
+    )
+    ```
+
+    **4. For Non-Latin Languages**
+    - Set `max_tokens_per_second` to 13.0 (default is 6.5)
+    - This prevents false hallucination detection
+
+    **5. Domain Customization**
+    - For specialized vocabulary, consider [commercial fine-tuning](mailto:contact@moonshine.ai)
+    - Community project: [finetune-moonshine-asr](https://github.com/pierre-cheneau/finetune-moonshine-asr)
+  </Accordion>
+
+  <Accordion title="What's the difference between streaming and non-streaming models?">
+    **Non-Streaming (Tiny, Base)**:
+    - Process complete audio segments
+    - Lower memory usage
+    - Good for shorter phrases
+    - Simpler architecture
+
+    **Streaming (Tiny Streaming, Small Streaming, Medium Streaming)**:
+    - Cache encoder output and decoder state
+    - Process audio incrementally
+    - Much lower latency for real-time use
+    - Can update transcription while user is still speaking
+    - Ideal for interactive applications
+
+    **Recommendation**: Use streaming models for live voice interfaces.
+  </Accordion>
+
+  <Accordion title="How do I handle multiple audio sources?">
+    Use **Streams** to process multiple inputs with a single transcriber:
+
+    ```python
+    transcriber = Transcriber(model_path=model_path, model_arch=model_arch)
+    
+    # Create separate streams
+    mic_stream = transcriber.create_stream()
+    system_audio_stream = transcriber.create_stream()
+    
+    # Each stream has its own transcript
+    mic_stream.start()
+    system_audio_stream.start()
+    
+    # Events are tagged with stream_handle
+    def on_line_completed(event):
+        if event.stream_handle == mic_stream.handle:
+            print(f"Mic: {event.line.text}")
+        elif event.stream_handle == system_audio_stream.handle:
+            print(f"System: {event.line.text}")
+    ```
+
+    This shares model weights, reducing memory usage.
+  </Accordion>
+
+  <Accordion title="Can I use Moonshine with a GPU or NPU?">
+    Moonshine uses ONNX Runtime, which supports hardware acceleration:
+
+    - **CPU**: Works out of the box (optimized for ARM and x86_64)
+    - **GPU**: ONNX Runtime can use CUDA, DirectML, or CoreML
+    - **NPU**: Some platforms support neural processing units
+
+    However, the pre-built packages are optimized for CPU execution across all platforms. Moonshine is designed to be fast enough on CPU for real-time use.
+
+    For custom GPU builds, you'll need to build ONNX Runtime with GPU support and link against it.
+  </Accordion>
+
+  <Accordion title="How do I debug transcription issues?">
+    **1. Enable Logging**
+    ```python
+    transcriber = Transcriber(
+        model_path=model_path,
+        model_arch=model_arch,
+        options={
+            "log_api_calls": "true",
+            "log_output_text": "true",
+            "log_ort_runs": "true",
+        }
+    )
+    ```
+
+    **2. Save Input Audio**
+    ```python
+    options={"save_input_wav_path": "/tmp/debug"}
+    ```
+    Listen to the saved WAV files to verify audio quality.
+
+    **3. Check Audio Format**
+    - Ensure audio is mono (not stereo)
+    - Sample rate is handled automatically
+    - Values should be in range [-1.0, 1.0]
+
+    **4. Test with Known Audio**
+    Use the included test file:
+    ```python
+    from moonshine_voice import get_assets_path, load_wav_file
+    test_wav = os.path.join(get_assets_path(), "two_cities.wav")
+    audio_data, sample_rate = load_wav_file(test_wav)
+    ```
+
+    See [Debugging Guide](/guides/debugging) for more details.
+  </Accordion>
+
+  <Accordion title="What's the memory footprint?">
+    Model sizes (quantized):
+
+    - **Tiny**: ~26 MB (26M parameters)
+    - **Tiny Streaming**: ~34 MB (34M parameters)
+    - **Base**: ~58 MB (58M parameters)
+    - **Small Streaming**: ~123 MB (123M parameters)
+    - **Medium Streaming**: ~245 MB (245M parameters)
+
+    Runtime memory:
+    - Small overhead for audio buffers
+    - Caching state for streaming models
+    - Multiple streams share model weights
+
+    All models are designed for edge devices with limited memory.
+  </Accordion>
+</AccordionGroup>
+
+## Integration Questions
+
+<AccordionGroup>
+  <Accordion title="How do I integrate Moonshine into my app?">
+    **Python**:
+    ```bash
+    pip install moonshine-voice
+    ```
+
+    **iOS/macOS**:
+    Add Swift package: `https://github.com/moonshine-ai/moonshine-swift/`
+
+    **Android**:
+    Add to `gradle/libs.versions.toml`:
+    ```toml
+    [versions]
+    moonshineVoice = "0.0.49"
+
+    [libraries]
+    moonshine-voice = { group = "ai.moonshine", name = "moonshine-voice", version.ref = "moonshineVoice" }
+    ```
+
+    **Windows/C++**:
+    Download pre-built libraries from [GitHub releases](https://github.com/moonshine-ai/moonshine/releases)
+
+    See [Installation Guide](/quickstart/installation) for details.
+  </Accordion>
+
+  <Accordion title="How do I handle microphone permissions?">
+    Moonshine Voice doesn't handle permissions directly - that's platform-specific:
+
+    **iOS**: Add to Info.plist:
+    ```xml
+    <key>NSMicrophoneUsageDescription</key>
+    <string>We need microphone access to transcribe your speech</string>
+    ```
+
+    **Android**: Add to AndroidManifest.xml:
+    ```xml
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    ```
+    And request at runtime (see Android examples).
+
+    **Web**: Use Web Audio API with `getUserMedia()`
+
+    See platform examples in `/resources/examples` for complete implementations.
+  </Accordion>
+
+  <Accordion title="Can I use Moonshine with React Native or Flutter?">
+    Yes, but you'll need to create bindings:
+
+    **React Native**:
+    - Create a native module wrapping the iOS/Android SDKs
+    - Use bridge to communicate with JavaScript
+
+    **Flutter**:
+    - Create a plugin using platform channels
+    - Call native iOS/Android code
+
+    The community is working on official bindings for these platforms. [Join Discord](https://discord.gg/27qp9zSRXF) to collaborate or get updates.
+  </Accordion>
+
+  <Accordion title="How do I bundle models with my app?">
+    **iOS/macOS**:
+    1. Add model files to Xcode project
+    2. Ensure they're in "Copy Bundle Resources"
+    3. Access via `Bundle.main.url(forResource:withExtension:)`
+
+    **Android**:
+    1. Place models in `src/main/assets/`
+    2. Access via `AssetManager`
+
+    **Python**:
+    - Models download to cache directory automatically
+    - Set custom location with `MOONSHINE_VOICE_CACHE` environment variable
+
+    See examples for complete implementations.
+  </Accordion>
+</AccordionGroup>
+
+## Still Have Questions?
+
+If you don't see your question answered here:
+
+- [Join our Discord community](https://discord.gg/27qp9zSRXF) for live support
+- [Search GitHub issues](https://github.com/moonshine-ai/moonshine/issues)
+- [Ask on GitHub Discussions](https://github.com/moonshine-ai/moonshine/discussions)
+- [Contact us](mailto:contact@moonshine.ai) directly
+
+See [Support](/resources/support) for more ways to get help.

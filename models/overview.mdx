@@ -1,0 +1,94 @@
+---
+title: Models Overview
+description: Introduction to Moonshine Voice's model family and architecture
+---
+
+Moonshine Voice is powered by a family of speech-to-text models created by the Moonshine AI team, designed specifically for real-time voice applications on edge devices.
+
+## Why Moonshine Models?
+
+Moonshine models were designed to address limitations in existing speech recognition models when building live voice interfaces:
+
+### Flexible Input Windows
+
+You can supply any length of audio (though we recommend staying below around 30 seconds) and the model will only spend compute on that input, no zero-padding required. Unlike Whisper's fixed 30-second input window, this gives a significant latency boost for real-time applications.
+
+### Caching for Streaming
+
+Our models support incremental addition of audio over time, caching the input encoding and part of the decoder's state. This allows the model to skip redundant computation, driving latency down dramatically while the user is speaking.
+
+### Language-Specific Models
+
+We've found that we can get much higher accuracy for the same size and compute if we restrict a model to focus on just one language, compared to training one model across many. This allows us to offer better accuracy for languages that are poorly supported by multilingual models.
+
+### Cross-Platform Optimization
+
+All models use ONNX format and are optimized for edge deployment with:
+- Memory-mappable OnnxRuntime (`.ort`) flatbuffer encoding
+- Post-training quantization to 8-bit weights and calculations
+- Optimized for CPU inference across Linux, macOS, Windows, iOS, Android, and Raspberry Pi
+
+## Model Architectures
+
+Moonshine offers several model architectures, each optimized for different use cases:
+
+<Note>
+Architecture constants are defined in `moonshine-c-api.h` as:
+- `MOONSHINE_MODEL_ARCH_TINY` (0)
+- `MOONSHINE_MODEL_ARCH_BASE` (1)
+- `MOONSHINE_MODEL_ARCH_TINY_STREAMING` (2)
+- `MOONSHINE_MODEL_ARCH_BASE_STREAMING` (3)
+- `MOONSHINE_MODEL_ARCH_SMALL_STREAMING` (4)
+- `MOONSHINE_MODEL_ARCH_MEDIUM_STREAMING` (5)
+</Note>
+
+### Non-Streaming Models
+
+**Tiny** - 26 million parameters
+- Smallest model for highly constrained deployments
+- Best for batch processing or applications with relaxed latency requirements
+
+**Base** - 58 million parameters
+- Balanced accuracy and size
+- Available for multiple languages
+- Good general-purpose choice for edge devices
+
+### Streaming Models
+
+**Tiny Streaming** - 34 million parameters
+- Smallest streaming model with caching support
+- Ideal for resource-constrained real-time applications
+
+**Small Streaming** - 123 million parameters
+- Mid-range streaming model
+- Good balance of accuracy and compute for live transcription
+
+**Medium Streaming** - 245 million parameters
+- Highest accuracy streaming model
+- **Achieves lower WER than Whisper Large v3** (6.65% vs 7.44%)
+- Recommended for applications where accuracy is critical
+
+<Info>
+Streaming models do most of their work while the user is still talking, enabling latency below 200ms for responsive voice interfaces.
+</Info>
+
+## Research Papers
+
+These research papers provide detailed information about the architectures and performance strategies:
+
+- [**Moonshine: Speech Recognition for Live Transcription and Voice Commands**](https://arxiv.org/abs/2410.15608) - Describes the first-generation model architecture with flexible-duration input windows
+
+- [**Flavors of Moonshine: Tiny Specialized ASR Models for Edge Devices**](https://arxiv.org/abs/2509.02523) - How language-specific models improve accuracy for non-English languages
+
+- [**Moonshine v2: Ergodic Streaming Encoder ASR for Latency-Critical Speech Applications**](https://arxiv.org/abs/2602.12241) - Introduces the streaming approach and advantages for live voice applications
+
+## Performance Characteristics
+
+All Moonshine models are optimized for:
+
+- **Low Latency**: Streaming models cache computation to minimize response time
+- **Edge Deployment**: Run efficiently on CPUs without GPU acceleration
+- **Privacy**: Everything runs on-device with no network calls required
+- **Accuracy**: Top-end models achieve state-of-the-art accuracy for their size
+
+See [Benchmarks](/models/benchmarks) for detailed performance comparisons and [Available Models](/models/available-models) for specific model metrics.

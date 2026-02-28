@@ -1,0 +1,234 @@
+---
+title: Model Customization
+description: Options for customizing Moonshine models for specific domains and use cases
+---
+
+Moonshine models can be customized to improve performance for specific domains, vocabulary, accents, or dialects.
+
+## Quantization
+
+All Moonshine models use post-training quantization to reduce size and improve inference speed while maintaining accuracy.
+
+### Default Quantization Strategy
+
+Moonshine models are quantized using:
+- **8-bit weights** across the board
+- **8-bit calculations** for heavy operations like MatMul
+- **B16 float precision** for frontend convolution layers
+
+### Frontend Precision Exception
+
+The frontend uses convolution layers to generate features (similar to MEL spectrogram preprocessing but learned). Since inputs correspond to 16-bit signed integers from raw audio (encoded as floats), these convolution operations require at least B16 float precision for optimal quality.
+
+### Quantization Tools
+
+Moonshine uses a combination of:
+- [OnnxRuntime's quantization tools](https://github.com/microsoft/onnxruntime)
+- [Onnx Shrink Ray utility](https://pypi.org/project/onnx-shrink-ray/) for additional optimization
+
+See the quantization options in `scripts/quantize-streaming-model.sh` for specific configuration details.
+
+### Model Variants
+
+When downloading models, you can specify different quantization levels:
+
+```python
+from moonshine_voice import download_model
+
+# Available variants: "fp32", "fp16", "q8", "q4", "q4f16"
+model_path, model_arch = download_model(
+    language="en",
+    quantization="q8"  # Default recommended quantization
+)
+```
+
+**Variant Comparison:**
+
+| Variant | Precision | Model Size | Inference Speed | Quality |
+| ------- | --------- | ---------- | --------------- | ------- |
+| fp32    | 32-bit float | Largest | Slowest | Highest |
+| fp16    | 16-bit float | Medium | Medium | High |
+| q8      | 8-bit int | Small | Fast | Good (recommended) |
+| q4      | 4-bit int | Smallest | Fastest | Acceptable |
+| q4f16   | Mixed 4/16-bit | Small | Fast | Good |
+
+<Info>
+The default **q8** (8-bit) quantization provides the best balance of size, speed, and quality for most applications.
+</Info>
+
+## Domain Customization
+
+Customizing models for specific vocabulary, jargon, accents, or dialects can significantly improve accuracy for your application.
+
+### Commercial Full Retraining
+
+Moonshine AI offers full model retraining as a commercial service:
+
+- Training on Moonshine's internal dataset plus your domain-specific data
+- Optimization for technical terms, industry jargon, or specialized vocabulary
+- Accent and dialect customization
+- Support for new languages or language variants
+
+[Contact Moonshine AI](mailto:contact@moonshine.ai) for custom model training.
+
+### Community Fine-Tuning Project
+
+A community project provides lightweight fine-tuning capabilities:
+
+**Repository:** [github.com/pierre-cheneau/finetune-moonshine-asr](https://github.com/pierre-cheneau/finetune-moonshine-asr)
+
+This project enables:
+- Fine-tuning existing Moonshine models on custom datasets
+- Adapting models to specific domains without full retraining
+- Experimenting with domain adaptation techniques
+
+<Note>
+Community fine-tuning is experimental and may not achieve the same quality as full retraining with Moonshine AI's proprietary dataset.
+</Note>
+
+## Model Architecture Customization
+
+For advanced users who want to modify the model architecture itself:
+
+### Model Files
+
+Each Moonshine model consists of:
+
+1. **encoder_model.ort** - ONNX model for audio encoding
+2. **decoder_model_merged.ort** - ONNX model for text generation
+3. **tokenizer.bin** - Binary token vocabulary file
+
+### Source Weights
+
+Original model weights are available on HuggingFace:
+
+- **Organization:** [huggingface.co/UsefulSensors/models](https://huggingface.co/UsefulSensors/models)
+- **Format:** Safetensors (floating-point checkpoints)
+
+### Conversion Scripts
+
+Convert HuggingFace models to ONNX format:
+
+```bash
+# Download and convert a model
+python scripts/download-moonshine-model.py \
+    --model-type base \
+    --model-language en
+
+# Convert to ONNX
+bash scripts/convert-moonshine-model.sh
+```
+
+### Tokenizer Conversion
+
+Convert JSON tokenizers to Moonshine's binary format:
+
+```bash
+python scripts/json-to-bin-vocab.py \
+    tokenizer.json \
+    tokenizer.bin
+```
+
+## Runtime Customization Options
+
+Moonshine provides several runtime options to customize behavior without retraining:
+
+### Voice Activity Detection (VAD)
+
+```python
+transcriber = Transcriber(
+    model_path=model_path,
+    model_arch=model_arch,
+    options={
+        "vad_threshold": "0.5",           # Default sensitivity
+        "vad_window_duration": "0.5",     # Averaging window (seconds)
+        "vad_max_segment_duration": "15", # Max segment length (seconds)
+    }
+)
+```
+
+- **vad_threshold**: Lower values (0.3) = longer segments with more background noise; Higher values (0.7) = shorter, cleaner segments
+- **vad_window_duration**: Shorter = faster speech detection, less accuracy; Longer = more accurate, may miss short utterances
+- **vad_max_segment_duration**: Maximum line length before forcing a break
+
+### Hallucination Prevention
+
+```python
+transcriber = Transcriber(
+    model_path=model_path,
+    model_arch=model_arch,
+    options={
+        "max_tokens_per_second": "13.0",  # For non-Latin languages
+    }
+)
+```
+
+Moonshine detects hallucinations (infinite decoding loops) by checking if token generation rate is abnormally high. Adjust this threshold based on your language.
+
+### Transcription Behavior
+
+```python
+transcriber = Transcriber(
+    model_path=model_path,
+    model_arch=model_arch,
+    options={
+        "transcription_interval": "0.5",  # Update frequency (seconds)
+        "skip_transcription": "false",    # Set to "true" to get only VAD segments
+        "identify_speakers": "true",      # Enable speaker diarization
+        "return_audio_data": "true",      # Include audio in transcript lines
+    }
+)
+```
+
+### Debug Options
+
+```python
+transcriber = Transcriber(
+    model_path=model_path,
+    model_arch=model_arch,
+    options={
+        "save_input_wav_path": "/tmp/debug",  # Save received audio to WAV files
+        "log_api_calls": "true",              # Log all C API calls
+        "log_ort_runs": "true",               # Log ONNX Runtime inference timing
+        "log_output_text": "true",            # Log transcription results
+    }
+)
+```
+
+<Info>
+All option values must be passed as strings, even for numeric values: `{"max_tokens_per_second": "13.0"}`
+</Info>
+
+## Platform-Specific Optimization
+
+Moonshine models are automatically optimized for your target platform, but you can further customize:
+
+### Mobile Optimization
+
+- Use Tiny or Base models for smaller binary size
+- Consider q4 quantization for minimal storage impact
+- Disable speaker identification if not needed
+- Reduce `transcription_interval` to lower compute load
+
+### Server Optimization
+
+- Use Medium Streaming for highest accuracy
+- Enable all features (speaker ID, audio data)
+- Shorter `transcription_interval` for more responsive updates
+
+### Embedded Devices
+
+- Stick with Tiny Streaming for Raspberry Pi and similar devices
+- Increase `vad_threshold` to filter out more background noise
+- Set `return_audio_data` to "false" to reduce memory usage
+
+## Future Customization Features
+
+Moonshine is actively developing:
+
+- **Lightweight domain customization**: Fine-tuning without full retraining
+- **More languages**: Expanding language support
+- **Binary size reduction**: Smaller models for mobile deployment
+- **Improved speaker identification**: Better diarization accuracy
+
+Join the [Moonshine Discord](https://discord.gg/27qp9zSRXF) to stay updated on new features.

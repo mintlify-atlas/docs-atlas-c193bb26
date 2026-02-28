@@ -1,0 +1,195 @@
+---
+title: Examples
+description: Explore Moonshine Voice examples across different platforms and use cases
+---
+
+The Moonshine Voice repository includes comprehensive examples demonstrating how to integrate and use the library across multiple platforms and languages.
+
+## Example Structure
+
+Examples are organized by platform in the [`examples/`](https://github.com/moonshine-ai/moonshine/tree/main/examples) directory:
+
+- **Android** - Mobile transcription app
+- **C++** - Cross-platform minimal example
+- **iOS** - Native iOS transcription app
+- **macOS** - Desktop applications
+- **Python** - Various transcription and intent recognition examples
+- **Raspberry Pi** - IoT and robotics examples
+- **Windows** - Command-line transcriber
+
+## Python Examples
+
+Python examples demonstrate the core features of Moonshine Voice and are located in `examples/python/`.
+
+### Basic Transcription
+
+**File**: `examples/python/basic_transcription.py`
+
+This example demonstrates both streaming and non-streaming transcription:
+
+- **Non-streaming mode**: Transcribe a complete audio file offline
+- **Streaming mode**: Process audio chunks in real-time with live updates
+- Implements custom `TranscriptEventListener` to handle events
+- Shows how to use `load_wav_file()` to load audio data
+
+```bash
+python examples/python/basic_transcription.py --language en
+```
+
+### Microphone Transcription
+
+**File**: `examples/python/mic_transcription.py`
+
+Real-time transcription from your microphone:
+
+- Uses `MicTranscriber` for automatic microphone integration
+- Implements terminal-aware output (interactive vs. non-interactive)
+- Shows real-time text updates as you speak
+- Handles line completion and text updates
+
+```bash
+python examples/python/mic_transcription.py --language en
+```
+
+### Intent Recognition
+
+**File**: `examples/python/intent_recognition.py`
+
+Voice command recognition using semantic matching:
+
+- Demonstrates `IntentRecognizer` for natural language commands
+- Uses embedding models for fuzzy phrase matching
+- Registers multiple intents with custom handlers
+- Shows confidence scores for matches
+
+Example commands:
+- "Turn on the lights" / "Switch on the lights"
+- "What's the weather like?" / "Weather forecast"
+- "Set a timer" / "Start a timer for 5 minutes"
+
+```bash
+python examples/python/intent_recognition.py
+```
+
+## Platform-Specific Examples
+
+### Android
+
+**Location**: `examples/android/Transcriber/`
+
+Full Android application demonstrating:
+- Integration with Android Studio and Gradle
+- Maven package integration
+- Real-time microphone transcription
+- Native Android UI with RecyclerView for transcript display
+
+**Download**: [android-examples.tar.gz](https://github.com/moonshine-ai/moonshine/releases/latest/download/android-examples.tar.gz)
+
+### iOS
+
+**Location**: `examples/ios/Transcriber/`
+
+Native iOS app featuring:
+- Swift integration using Swift Package Manager
+- SwiftUI interface
+- Real-time microphone transcription
+- Model file bundling in app resources
+
+**Download**: [ios-examples.tar.gz](https://github.com/moonshine-ai/moonshine/releases/latest/download/ios-examples.tar.gz)
+
+### macOS
+
+Two examples demonstrating different approaches:
+
+#### Basic Transcription
+**Location**: `examples/macos/BasicTranscription/`
+- Command-line tool for transcribing audio files
+- Shows Swift Package Manager integration
+
+#### Mic Transcription
+**Location**: `examples/macos/MicTranscription/`
+- Real-time microphone transcription for macOS
+- Native audio input handling
+
+**Download**: [macos-examples.tar.gz](https://github.com/moonshine-ai/moonshine/releases/latest/download/macos-examples.tar.gz)
+
+### Windows
+
+**Location**: `examples/windows/cli-transcriber/`
+
+Command-line transcriber for Windows:
+- Visual Studio project (.vcxproj)
+- C++ implementation using the high-level API
+- Includes `download-lib.bat` script to fetch pre-built libraries
+
+**Download**: [windows-examples.tar.gz](https://github.com/moonshine-ai/moonshine/releases/latest/download/windows-examples.tar.gz)
+
+```batch
+cd examples\windows\cli-transcriber
+.\download-lib.bat
+msbuild cli-transcriber.sln /p:Configuration=Release /p:Platform=x64
+python -m moonshine_voice.download --language en
+x64\Release\cli-transcriber.exe --model-path <path> --model-arch <arch>
+```
+
+### C++ (Cross-Platform)
+
+**Location**: `examples/c++/`
+
+Minimal, platform-independent example:
+- Uses the C++ header-only API (`moonshine-cpp.h`)
+- Shows basic transcription workflow
+- Demonstrates linking with pre-built libraries
+- Works on Linux, macOS, and Windows
+
+**Key Features**:
+- No platform-specific dependencies
+- Simple build with g++ or clang++
+- Links against static library (.a or .lib)
+
+### Raspberry Pi
+
+**Location**: `examples/raspberry-pi/my-dalek/`
+
+**File**: `my-dalek.py`
+
+Robotics voice control example:
+- Voice commands for robot movement (forward, backward, left, right)
+- Intent recognition with natural language variations
+- Designed for Raspberry Pi with USB microphone
+- Demonstrates IoT device integration
+
+**Commands**:
+- "Move forward" / "Go ahead" / "Advance"
+- "Turn left" / "Go left"
+- "Exterminate" / "Kill all humans" (for fun!)
+
+```bash
+pip install moonshine-voice
+python examples/raspberry-pi/my-dalek/my-dalek.py
+```
+
+**Download**: [raspberry-pi-examples.tar.gz](https://github.com/moonshine-ai/moonshine/releases/latest/download/raspberry-pi-examples.tar.gz)
+
+## Common Patterns
+
+All examples demonstrate these key patterns:
+
+1. **Model Loading**: Download and load appropriate models for your language
+2. **Event Listeners**: Implement `TranscriptEventListener` for handling transcription updates
+3. **Audio Input**: Feed audio data from files, microphones, or other sources
+4. **Session Management**: Start/stop sessions to control transcription lifecycle
+
+## Getting Started
+
+1. Choose the platform/language that matches your project
+2. Download the example archive or clone the repository
+3. Follow the platform-specific setup instructions
+4. Run the example to verify it works
+5. Adapt the code for your application
+
+## Next Steps
+
+- [Add the library to your own app](/quickstart/installation)
+- [Learn about the API](/api/transcriber)
+- [Build from source](/resources/building-from-source) for customization

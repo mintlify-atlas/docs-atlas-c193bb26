@@ -1,0 +1,191 @@
+---
+title: Performance Benchmarks
+description: Benchmark results comparing Moonshine models to Whisper across platforms
+---
+
+Moonshine models are optimized for real-time voice applications with low latency requirements. These benchmarks compare Moonshine to Whisper models across different platforms.
+
+## Quick Comparison: Moonshine vs Whisper
+
+<Info>
+**TL;DR** - Choose Moonshine when working with live speech.
+</Info>
+
+| Model                      | WER    | Parameters   | MacBook Pro | Linux x86 | Raspberry Pi 5 |
+| -------------------------- | ------ | ------------ | ----------- | --------- | -------------- |
+| Moonshine Medium Streaming | 6.65%  | 245 million  | 107ms       | 269ms     | 802ms          |
+| Whisper Large v3           | 7.44%  | 1.5 billion  | 11,286ms    | 16,919ms  | N/A            |
+| Moonshine Small Streaming  | 7.84%  | 123 million  | 73ms        | 165ms     | 527ms          |
+| Whisper Small              | 8.59%  | 244 million  | 1,940ms     | 3,425ms   | 10,397ms       |
+| Moonshine Tiny Streaming   | 12.00% | 34 million   | 34ms        | 69ms      | 237ms          |
+| Whisper Tiny               | 12.81% | 39 million   | 277ms       | 1,141ms   | 5,863ms        |
+
+**Key Takeaways:**
+- Moonshine Medium Streaming achieves **better accuracy than Whisper Large v3** with 6x fewer parameters
+- Moonshine models are **10-100x faster** than equivalent Whisper models for real-time speech
+- Moonshine Tiny Streaming runs in **34ms** on a MacBook Pro, enabling sub-200ms total latency for voice interfaces
+- All Moonshine models run efficiently on Raspberry Pi 5, while Whisper Large v3 cannot run on this platform
+
+## Understanding the Metrics
+
+### Word Error Rate (WER)
+
+Measures transcription accuracy. Lower is better. A WER of 6.65% means that on average, 6.65% of words are incorrectly transcribed.
+
+### Latency (ms)
+
+The average time between when the library determines the user has stopped talking and the delivery of the final transcript. This is where streaming models excel:
+
+- Streaming models do most work **while the user is talking**
+- Non-streaming models must process the entire segment **after speech ends**
+- For responsive voice interfaces, target **latency below 200ms**
+
+### Compute Percentage
+
+The percentage of CPU time required to process audio in real-time. For example:
+- 20% means the model uses 1/5 of CPU time, leaving 80% for your application
+- 100% means the model uses all available CPU just to keep up with real-time audio
+- Values over 100% mean the model cannot process audio in real-time
+
+## Benchmark Methodology
+
+### Test Setup
+
+The `core/benchmark` tool simulates processing live audio by:
+
+1. Loading a .wav audio file
+2. Feeding it in chunks to the model (simulating real-time streaming)
+3. Measuring absolute processing time
+4. Calculating percentage of audio duration
+5. Computing average response latency
+
+### Running Benchmarks
+
+```bash
+cd core
+mkdir build
+cd build
+cmake ..
+cmake --build . --config Release
+./benchmark
+```
+
+By default, the benchmark uses the embedded Tiny English model. You can specify a different model:
+
+```bash
+./benchmark --model-path /path/to/model --model-arch 5
+```
+
+### Adjusting Update Frequency
+
+Control how often the transcript is updated (default 0.5 seconds):
+
+```bash
+./benchmark --transcription-interval 0.3
+```
+
+Longer intervals reduce compute requirements slightly but slow down updates to your application.
+
+## Python Benchmark Script
+
+For platforms supporting Python, use `scripts/run-benchmarks.py` which:
+
+- Automatically downloads models
+- Evaluates both Moonshine and Whisper models
+- Provides detailed latency and compute cost comparisons
+
+### Whisper Comparison Methodology
+
+Our Whisper benchmarks are designed for **real-time voice application scenarios**, not bulk offline processing:
+
+**Requirements:**
+- Speech must be responded to quickly once a user completes a phrase
+- Phrases range from 1-10 seconds in duration
+- Latency on individual segments matters more than overall throughput
+
+**Setup:**
+- Test file: `two_cities.wav` (mix of short and long phrases)
+- Moonshine models: Tiny, Base, Tiny/Small/Medium Streaming
+- Whisper models: Tiny, Base, Small, Large v3
+- Comparison: Moonshine Medium Streaming vs Whisper Large v3 (both achieve sub-8% WER)
+- VAD: Moonshine VAD segmenter splits audio into phrases
+- Platform: CPU only (using faster-whisper for best cross-platform performance)
+
+**Measurements:**
+
+1. **Response Latency**: Time from phrase completion (VAD detection) to transcribed text
+   - Whisper: Full transcription time for each segment
+   - Moonshine Streaming: Minimal time (most work done during speech)
+
+2. **Compute Cost**: Total audio processing time as percentage of audio duration
+   - Inverse of the Real-Time Factor (RTF) metric
+   - Reflects actual CPU load for real-time applications
+
+<Note>
+We use CPU-only benchmarks because most applications cannot rely on GPU/NPU acceleration being present across all target platforms. While GPU-accelerated Whisper implementations exist, they lack the portability required for edge deployment.
+</Note>
+
+## Why Not Whisper for Live Speech?
+
+Whisper is excellent for bulk offline processing, but has limitations for real-time voice interfaces:
+
+### Fixed 30-Second Input Window
+
+- Voice interface phrases are typically 1-10 seconds
+- Remaining 20+ seconds are zero padding
+- Wasted computation encoding empty input
+- Increased latency even on high-end hardware
+
+### No Caching
+
+- Voice interfaces need to display feedback while the user talks
+- This requires repeated transcription calls as speech continues
+- Whisper starts from scratch each time, repeating work on unchanged audio
+- Moonshine caches encoder output and decoder state for dramatic speedup
+
+### Poor Multilingual Support
+
+From OpenAI's Whisper paper ([Appendix D-2.4](https://cdn.openai.com/papers/whisper.pdf)):
+
+- 82 languages listed
+- Only **33 languages** achieve sub-20% WER (usable quality)
+- For Base model (common on edge devices): only **5 languages** under 20% WER
+- Languages like Korean and Japanese have poor accuracy despite large markets
+
+Moonshine's language-specific models achieve much better accuracy for the same model size.
+
+### Fragmented Edge Support
+
+- Desktop-focused frameworks with mature ecosystems
+- Inconsistent interfaces and capabilities across iOS, Android, Raspberry Pi
+- Difficult to build applications that run on multiple platforms
+
+Moonshine provides a unified API across all platforms.
+
+## Platform-Specific Notes
+
+### MacBook Pro
+
+Latencies are measured on a recent MacBook Pro with M-series chip. Moonshine models benefit from optimized CPU inference.
+
+### Linux x86
+
+Latencies measured on a standard x86_64 Linux server. 2-3x slower than MacBook Pro but still achieving sub-second latency for all Moonshine models.
+
+### Raspberry Pi 5
+
+Moonshine models are specifically optimized for Raspberry Pi:
+- All models run efficiently on the device
+- Tiny Streaming achieves 237ms latency (suitable for most voice interfaces)
+- Whisper Tiny is 24x slower (5,863ms vs 237ms)
+- Whisper Large v3 cannot run on this platform
+
+## Custom Benchmarking
+
+You can run benchmarks with your own audio files:
+
+```bash
+python scripts/run-benchmarks.py --wav_path /path/to/your/audio.wav
+```
+
+This helps evaluate performance for your specific use case and audio characteristics.

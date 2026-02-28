@@ -1,0 +1,279 @@
+---
+title: 'Transcription Guide'
+description: 'Learn how to transcribe audio files and streams with Moonshine Voice'
+---
+
+The `Transcriber` class is the core component for converting speech to text. It supports both batch transcription of audio files and streaming transcription of live audio.
+
+## Basic Setup
+
+<Steps>
+  <Step title="Download a model">
+    First, download the model files for your target language:
+
+    ```bash
+    python -m moonshine_voice.download --language en
+    ```
+
+    The script will output the model path and architecture number.
+  </Step>
+
+  <Step title="Create a transcriber">
+    Initialize a `Transcriber` with the model path and architecture:
+
+    ```python
+    from moonshine_voice import Transcriber, ModelArch
+
+    transcriber = Transcriber(
+        model_path="/path/to/model",
+        model_arch=ModelArch.TINY_STREAMING
+    )
+    ```
+  </Step>
+
+  <Step title="Set up event listeners">
+    Create a listener class to handle transcription events:
+
+    ```python
+    from moonshine_voice import TranscriptEventListener, LineStarted, LineTextChanged, LineCompleted
+
+    class MyListener(TranscriptEventListener):
+        def on_line_started(self, event: LineStarted):
+            print(f"Line started: {event.line.text}")
+
+        def on_line_text_changed(self, event: LineTextChanged):
+            print(f"Line text changed: {event.line.text}")
+
+        def on_line_completed(self, event: LineCompleted):
+            print(f"Line completed: {event.line.text}")
+
+    transcriber.add_listener(MyListener())
+    ```
+  </Step>
+
+  <Step title="Transcribe audio">
+    Start the transcriber, add audio data, and stop when done:
+
+    ```python
+    from moonshine_voice.utils import load_wav_file
+
+    # Load audio from a WAV file
+    audio_data, sample_rate = load_wav_file("audio.wav")
+
+    transcriber.start()
+
+    # Feed audio in chunks to simulate streaming
+    chunk_duration = 0.1
+    chunk_size = int(chunk_duration * sample_rate)
+    for i in range(0, len(audio_data), chunk_size):
+        chunk = audio_data[i:i + chunk_size]
+        transcriber.add_audio(chunk, sample_rate)
+
+    transcriber.stop()
+    transcriber.close()
+    ```
+  </Step>
+</Steps>
+
+## Batch Transcription
+
+For transcribing recorded audio without streaming updates:
+
+```python
+transcriber = Transcriber(
+    model_path=model_path,
+    model_arch=ModelArch.BASE
+)
+
+audio_data, sample_rate = load_wav_file("recording.wav")
+
+transcript = transcriber.transcribe_without_streaming(
+    audio_data=audio_data,
+    sample_rate=sample_rate
+)
+
+# Access transcription lines
+for line in transcript.lines:
+    print(f"{line.start_time}s: {line.text}")
+
+transcriber.close()
+```
+
+<Note>
+  The `transcribe_without_streaming()` method is ideal for processing pre-recorded audio files where you don't need real-time updates.
+</Note>
+
+## Event Listener Interface
+
+The `TranscriptEventListener` class provides callback methods for different transcription events:
+
+- **`on_line_started(event)`** - Called when a new speech segment begins
+- **`on_line_updated(event)`** - Called when any line information changes
+- **`on_line_text_changed(event)`** - Called when the text of a line is updated
+- **`on_line_completed(event)`** - Called when a speech segment ends
+- **`on_error(event)`** - Called when an error occurs
+
+### Event Flow Guarantees
+
+- `LineStarted` is always called exactly once for any segment
+- `LineCompleted` is always called exactly once after `LineStarted`
+- `LineUpdated` and `LineTextChanged` are only called between start and completion
+- There is only one active line at any time per stream
+- Once `LineCompleted` is called, the line data never changes
+- Each line has a unique 64-bit `lineId` that remains constant
+
+## Working with Transcript Lines
+
+Each `TranscriptLine` contains:
+
+```python
+class TranscriptLine:
+    text: str                          # Transcribed text
+    start_time: float                  # Start time in seconds
+    duration: float                    # Duration in seconds
+    line_id: int                       # Unique line identifier
+    is_complete: bool                  # Whether line is finalized
+    is_updated: bool                   # Whether line was updated
+    is_new: bool                       # Whether this is a new line
+    has_text_changed: bool            # Whether text changed
+    has_speaker_id: bool              # Whether speaker ID is available
+    speaker_id: str                    # Speaker identifier
+    speaker_index: int                 # Speaker number
+    audio_data: List[float]           # Raw audio samples
+    last_transcription_latency_ms: float
+```
+
+### Example: Displaying speaker information
+
+```python
+class SpeakerListener(TranscriptEventListener):
+    def on_line_completed(self, event):
+        line = event.line
+        if line.has_speaker_id:
+            print(f"Speaker #{line.speaker_index}: {line.text}")
+        else:
+            print(line.text)
+```
+
+## Configuration Options
+
+### Update Interval
+
+Control how often the transcription is updated during streaming:
+
+```python
+transcriber = Transcriber(
+    model_path=model_path,
+    model_arch=model_arch,
+    update_interval=0.5  # Update every 500ms (default)
+)
+```
+
+<Tip>
+  Lower update intervals provide more frequent updates but increase compute usage. For streaming models, most work is done incrementally, so the interval has minimal impact on latency.
+</Tip>
+
+### Advanced Options
+
+Pass custom options as a dictionary:
+
+```python
+options = {
+    "save_input_wav_path": "/tmp/debug",
+    "log_api_calls": "true",
+    "max_tokens_per_second": "13.0"
+}
+
+transcriber = Transcriber(
+    model_path=model_path,
+    model_arch=model_arch,
+    options=options
+)
+```
+
+## Multiple Streams
+
+Process multiple audio sources simultaneously:
+
+```python
+transcriber = Transcriber(model_path=model_path, model_arch=model_arch)
+
+# Create separate streams
+stream1 = transcriber.create_stream(update_interval=0.5)
+stream2 = transcriber.create_stream(update_interval=0.3)
+
+# Add listeners to each stream
+stream1.add_listener(listener1)
+stream2.add_listener(listener2)
+
+# Start and use streams independently
+stream1.start()
+stream2.start()
+
+stream1.add_audio(audio_data1, sample_rate)
+stream2.add_audio(audio_data2, sample_rate)
+
+stream1.stop()
+stream2.stop()
+
+stream1.close()
+stream2.close()
+```
+
+<Note>
+  Multiple streams share the same model resources, making it efficient to process multiple audio sources without duplicating model memory.
+</Note>
+
+## Context Manager Support
+
+Use context managers for automatic resource cleanup:
+
+```python
+with Transcriber(model_path=model_path, model_arch=model_arch) as transcriber:
+    transcriber.start()
+    transcriber.add_audio(audio_data, sample_rate)
+    transcriber.stop()
+# Automatically closed
+```
+
+## Command Line Usage
+
+Test transcription directly from the command line:
+
+```bash
+# Transcribe a WAV file
+python -m moonshine_voice.transcriber --language en --wav-path audio.wav
+
+# Use a specific model
+python -m moonshine_voice.transcriber \
+  --model-path /path/to/model \
+  --model-arch 3 \
+  --wav-path audio.wav
+
+# Quiet mode (only show completed lines)
+python -m moonshine_voice.transcriber --language en --quiet
+
+# Hide speaker IDs
+python -m moonshine_voice.transcriber --language en --no-speaker-ids
+```
+
+## Non-Latin Language Support
+
+<Warning>
+  For languages that don't use the Latin alphabet (Arabic, Japanese, Korean, Mandarin, etc.), set `max_tokens_per_second` to 13.0 to avoid cutting off valid outputs:
+
+  ```python
+  options = {"max_tokens_per_second": "13.0"}
+  transcriber = Transcriber(
+      model_path=model_path,
+      model_arch=model_arch,
+      options=options
+  )
+  ```
+</Warning>
+
+## See Also
+
+- [Microphone Transcription Guide](/guides/mic-transcription) - Transcribe from microphone input
+- [Streaming Transcription Guide](/guides/streaming) - Advanced streaming patterns
+- [Debugging Guide](/guides/debugging) - Troubleshooting transcription issues

@@ -1,0 +1,316 @@
+---
+title: Events
+description: Event system for transcript updates and errors
+---
+
+Moonshine Voice uses an event-driven architecture to notify your application of transcription updates. This page documents the event types and the listener interface.
+
+## TranscriptEventListener
+
+Protocol (interface) for receiving transcription events.
+
+```python
+from moonshine_voice import TranscriptEventListener
+
+class MyListener(TranscriptEventListener):
+    def on_line_started(self, event: LineStarted):
+        pass
+    
+    def on_line_updated(self, event: LineUpdated):
+        pass
+    
+    def on_line_text_changed(self, event: LineTextChanged):
+        pass
+    
+    def on_line_completed(self, event: LineCompleted):
+        pass
+    
+    def on_error(self, event: Error):
+        pass
+```
+
+All methods are optional. Implement only the events you need.
+
+## Event Types
+
+All event types have these common fields:
+
+<ResponseField name="line" type="TranscriptLine">
+  The transcript line this event refers to
+</ResponseField>
+
+<ResponseField name="stream_handle" type="int">
+  The stream that generated this event (useful when using multiple streams)
+</ResponseField>
+
+### LineStarted
+
+Fired when a new speech segment begins.
+
+```python
+from moonshine_voice import LineStarted
+
+def on_line_started(self, event: LineStarted):
+    print(f"New line started: ID {event.line.line_id}")
+    print(f"Initial text: {event.line.text}")
+```
+
+**Guarantees:**
+- Called exactly once per line
+- Always called before any updates or completion
+- `event.line.is_new` is `True`
+- `event.line.is_complete` is `False`
+- `event.line.text` may be empty or contain initial recognition
+
+### LineUpdated
+
+Fired when any property of a line changes.
+
+```python
+from moonshine_voice import LineUpdated
+
+def on_line_updated(self, event: LineUpdated):
+    print(f"Line {event.line.line_id} updated")
+    print(f"Duration: {event.line.duration:.2f}s")
+```
+
+**Guarantees:**
+- Only called between `LineStarted` and `LineCompleted`
+- `event.line.is_updated` is `True`
+- May be called zero or more times (depends on `update_interval`)
+- Called when duration, speaker ID, or text changes
+
+### LineTextChanged
+
+Fired when the text of a line changes (subset of `LineUpdated`).
+
+```python
+from moonshine_voice import LineTextChanged
+
+def on_line_text_changed(self, event: LineTextChanged):
+    # Update UI to show new text
+    print(f"\r{event.line.text}", end="", flush=True)
+```
+
+**Guarantees:**
+- Only called when `event.line.text` changes
+- `event.line.has_text_changed` is `True`
+- `event.line.is_updated` is also `True`
+- If text changes, this is called in addition to `LineUpdated`
+
+### LineCompleted
+
+Fired when a speech segment ends (user pauses).
+
+```python
+from moonshine_voice import LineCompleted
+
+def on_line_completed(self, event: LineCompleted):
+    print(f"\nFinal: {event.line.text}")
+    # Save to database, trigger actions, etc.
+```
+
+**Guarantees:**
+- Called exactly once per line
+- Always called after `LineStarted`
+- `event.line.is_complete` is `True`
+- This is the last event for this line
+- The line data never changes after this event
+- If `stop()` is called, any active line gets this event
+
+### Error
+
+Fired when an error occurs during processing.
+
+```python
+from moonshine_voice import Error
+
+def on_error(self, event: Error):
+    print(f"Error on stream {event.stream_handle}: {event.error}")
+    # event.line may be None
+```
+
+<ResponseField name="error" type="Exception">
+  The exception that occurred
+</ResponseField>
+
+<ResponseField name="line" type="TranscriptLine | None">
+  The line being processed when the error occurred, or None
+</ResponseField>
+
+## Event Flow Guarantees
+
+Moonshine provides these guarantees about event ordering:
+
+1. **Exactly one `LineStarted`** per segment
+2. **Zero or more updates** (`LineUpdated`, `LineTextChanged`) per segment
+3. **Exactly one `LineCompleted`** per segment
+4. **Updates only between start and completion**
+5. **Sequential processing** - only one line is active at a time per stream
+6. **Stable line IDs** - `line_id` never changes for a line
+7. **Immutable completed lines** - data never changes after `LineCompleted`
+
+```
+LineStarted
+    ↓
+[LineUpdated] ← May happen 0+ times
+[LineTextChanged] ← May happen 0+ times  
+    ↓
+LineCompleted
+```
+
+## Example: Basic Listener
+
+```python
+from moonshine_voice import (
+    Transcriber,
+    TranscriptEventListener,
+    LineStarted,
+    LineTextChanged,
+    LineCompleted
+)
+
+class SimpleListener(TranscriptEventListener):
+    def on_line_started(self, event: LineStarted):
+        print("\n[Listening...]", end="", flush=True)
+    
+    def on_line_text_changed(self, event: LineTextChanged):
+        # Show updates inline
+        print(f"\r{event.line.text}", end="", flush=True)
+    
+    def on_line_completed(self, event: LineCompleted):
+        # Print final version
+        print(f"\n✓ {event.line.text}")
+
+transcriber = Transcriber(
+    model_path="/path/to/models"
+)
+
+transcriber.add_listener(SimpleListener())
+```
+
+## Example: Multi-Speaker Listener
+
+```python
+class SpeakerListener(TranscriptEventListener):
+    def __init__(self):
+        self.speaker_names = {}
+        self.colors = ['\033[91m', '\033[92m', '\033[94m', '\033[95m']
+        self.reset = '\033[0m'
+    
+    def get_speaker_label(self, line):
+        if not line.has_speaker_id:
+            return "Speaker ?"
+        
+        if line.speaker_id not in self.speaker_names:
+            # Assign name and color
+            idx = len(self.speaker_names)
+            self.speaker_names[line.speaker_id] = f"Speaker {idx + 1}"
+        
+        return self.speaker_names[line.speaker_id]
+    
+    def on_line_completed(self, event: LineCompleted):
+        speaker = self.get_speaker_label(event.line)
+        color = self.colors[event.line.speaker_index % len(self.colors)]
+        print(f"{color}{speaker}:{self.reset} {event.line.text}")
+
+transcriber.add_listener(SpeakerListener())
+```
+
+## Example: Saving to Database
+
+```python
+import sqlite3
+from datetime import datetime
+
+class DatabaseListener(TranscriptEventListener):
+    def __init__(self, db_path):
+        self.conn = sqlite3.connect(db_path)
+        self.conn.execute('''
+            CREATE TABLE IF NOT EXISTS transcripts (
+                id INTEGER PRIMARY KEY,
+                line_id INTEGER,
+                timestamp TEXT,
+                speaker_id INTEGER,
+                text TEXT,
+                duration REAL
+            )
+        ''')
+    
+    def on_line_completed(self, event: LineCompleted):
+        self.conn.execute(
+            'INSERT INTO transcripts (line_id, timestamp, speaker_id, text, duration) VALUES (?, ?, ?, ?, ?)',
+            (
+                event.line.line_id,
+                datetime.now().isoformat(),
+                event.line.speaker_id if event.line.has_speaker_id else None,
+                event.line.text,
+                event.line.duration
+            )
+        )
+        self.conn.commit()
+
+transcriber.add_listener(DatabaseListener('transcripts.db'))
+```
+
+## Example: Multiple Listeners
+
+You can attach multiple listeners to handle different aspects:
+
+```python
+class UIListener(TranscriptEventListener):
+    """Update the user interface"""
+    def on_line_text_changed(self, event):
+        update_ui(event.line.text)
+
+class LogListener(TranscriptEventListener):
+    """Log to file"""
+    def on_line_completed(self, event):
+        with open('transcript.log', 'a') as f:
+            f.write(f"{event.line.start_time:.2f}s: {event.line.text}\n")
+
+class CommandListener(TranscriptEventListener):
+    """Detect commands"""
+    def on_line_completed(self, event):
+        if 'stop' in event.line.text.lower():
+            stop_playback()
+
+transcriber.add_listener(UIListener())
+transcriber.add_listener(LogListener())
+transcriber.add_listener(CommandListener())
+```
+
+## Thread Safety
+
+<Warning>
+  Event listeners are called from the same thread that calls `add_audio()` or `update_transcription()`. 
+  If your listener does heavy work, consider using a queue to process events asynchronously.
+</Warning>
+
+```python
+import queue
+import threading
+
+class AsyncListener(TranscriptEventListener):
+    def __init__(self):
+        self.queue = queue.Queue()
+        self.thread = threading.Thread(target=self._process_queue)
+        self.thread.daemon = True
+        self.thread.start()
+    
+    def on_line_completed(self, event):
+        # Quick: just queue it
+        self.queue.put(event.line.text)
+    
+    def _process_queue(self):
+        while True:
+            text = self.queue.get()
+            # Do slow work here
+            process_text(text)
+```
+
+## See Also
+
+- [Transcriber API](/api/python/transcriber) - Adding listeners
+- [Data Structures](/api/python/data-structures) - TranscriptLine details
+- [Transcription Guide](/guides/transcription) - Using events in practice

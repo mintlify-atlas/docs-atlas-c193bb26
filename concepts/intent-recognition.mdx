@@ -1,0 +1,636 @@
+---
+title: Intent Recognition
+description: Build natural language voice command interfaces with semantic matching
+---
+
+## Overview
+
+Intent recognition allows applications to detect when users request specific actions, using natural language variations rather than exact phrase matching. Moonshine Voice uses semantic embeddings to match user speech to registered commands with fuzzy matching.
+
+## The Problem with Exact Matching
+
+From README.md:289-291:
+
+<Note>
+  The previous generation of voice interfaces could only recognize speech phrased exactly as expected. "Alexa, turn on living-room lights" might work, but "Alexa, lights on in the living room please" might not.
+</Note>
+
+Users naturally express the same intent in different ways:
+- "Turn on the lights" → "Switch on the lights" → "Lights on" → "Let there be light"
+- "What's the weather" → "Weather forecast" → "Tell me the weather"
+- "Play some music" → "Start playing music" → "I want to hear music"
+
+Intent recognition handles these variations.
+
+## How Intent Recognition Works
+
+### Semantic Embeddings
+
+From `python/src/moonshine_voice/intent_recognizer.py:1-6`:
+
+> This module provides intent recognition capabilities using semantic embeddings.
+
+The process:
+
+```
+Text Input → Tokenizer → Embedding Model → Vector (300 dimensions)
+                                              ↓
+                                        Compare with
+                                        registered intents
+                                              ↓
+                                      Cosine Similarity
+                                              ↓
+                                     Threshold Check
+                                              ↓
+                                     Trigger Handler
+```
+
+### Embedding Model
+
+From `core/moonshine-c-api.h:489-490`:
+
+```c
+/* Supported embedding model architectures for intent recognition. */
+#define MOONSHINE_EMBEDDING_MODEL_ARCH_GEMMA_300M (0)
+```
+
+Moonshine uses a Gemma-300M based embedding model to convert text into semantic vectors.
+
+### Similarity Matching
+
+From `python/src/moonshine_voice/intent_recognizer.py:64-70`:
+
+```python
+class IntentRecognizer:
+    def __init__(
+        self,
+        model_path: str,
+        model_arch: EmbeddingModelArch = EmbeddingModelArch.GEMMA_300M,
+        model_variant: str = "fp32",
+        threshold: float = 0.7,  # Minimum similarity to trigger
+    ):
+```
+
+**Threshold behavior:**
+- `0.0` - Matches everything (too permissive)
+- `0.5` - Loose matching, many false positives
+- `0.7` - Balanced (default)
+- `0.8` - Conservative, fewer false positives
+- `1.0` - Exact embedding match (very strict)
+
+## Using IntentRecognizer
+
+### Standalone Mode
+
+Process utterances directly:
+
+```python
+from moonshine_voice import IntentRecognizer, get_embedding_model
+
+# Download and load embedding model
+model_path, model_arch = get_embedding_model(
+    model_name="embeddinggemma-300m",
+    quantization="fp32"
+)
+
+# Create recognizer
+recognizer = IntentRecognizer(
+    model_path=model_path,
+    model_arch=model_arch,
+    model_variant="fp32",
+    threshold=0.7
+)
+
+# Register intents with handlers
+def on_lights_on(trigger, utterance, similarity):
+    print(f"Turning lights on (confidence: {similarity:.0%})")
+    # Your light control code here
+
+recognizer.register_intent("turn on the lights", on_lights_on)
+
+# Process utterances
+recognizer.process_utterance("switch on the lights")  # Triggers handler
+recognizer.process_utterance("illuminate the room")   # Triggers handler
+recognizer.process_utterance("play some music")       # No trigger
+```
+
+### As TranscriptEventListener
+
+From `python/src/moonshine_voice/intent_recognizer.py:45-62`:
+
+```python
+class IntentRecognizer(TranscriptEventListener):
+    """Intent recognizer that uses semantic embeddings to match utterances.
+    
+    This class can be used standalone by calling process_utterance(), or as
+    a TranscriptEventListener to automatically process completed transcript
+    lines.
+    """
+```
+
+Automatic intent detection from transcription:
+
+```python
+from moonshine_voice import (
+    MicTranscriber,
+    IntentRecognizer,
+    get_model_for_language,
+    get_embedding_model
+)
+
+# Load models
+model_path, model_arch = get_model_for_language("en")
+embed_path, embed_arch = get_embedding_model("embeddinggemma-300m", "fp32")
+
+# Create transcriber
+transcriber = MicTranscriber(
+    model_path=model_path,
+    model_arch=model_arch
+)
+
+# Create intent recognizer
+recognizer = IntentRecognizer(
+    model_path=embed_path,
+    model_arch=embed_arch,
+    threshold=0.7
+)
+
+# Register intents
+def handle_lights_on(trigger, utterance, similarity):
+    print(f"💡 Lights on! ({similarity:.0%} match)")
+
+def handle_lights_off(trigger, utterance, similarity):
+    print(f"💡 Lights off! ({similarity:.0%} match)")
+
+recognizer.register_intent("turn on the lights", handle_lights_on)
+recognizer.register_intent("turn off the lights", handle_lights_off)
+
+# Connect recognizer to transcriber
+transcriber.add_listener(recognizer)
+
+# Start listening
+transcriber.start()
+# Now any completed speech automatically triggers intent matching
+```
+
+## API Reference
+
+### IntentRecognizer Constructor
+
+From `python/src/moonshine_voice/intent_recognizer.py:64-108`:
+
+```python
+def __init__(
+    self,
+    model_path: str,              # Path to embedding model directory
+    model_arch: EmbeddingModelArch = EmbeddingModelArch.GEMMA_300M,
+    model_variant: str = "fp32",  # "fp32", "fp16", "q8", "q4", "q4f16"
+    threshold: float = 0.7,       # Similarity threshold [0.0-1.0]
+)
+```
+
+**Model variants:**
+- `fp32` - Full precision, highest accuracy
+- `fp16` - Half precision, good accuracy, smaller
+- `q8` - 8-bit quantized, faster
+- `q4` - 4-bit quantized, fastest, smallest
+- `q4f16` - 4-bit weights, 16-bit activations
+
+### register_intent()
+
+From `python/src/moonshine_voice/intent_recognizer.py:190-231`:
+
+```python
+def register_intent(
+    self,
+    trigger_phrase: str,  # Canonical command phrase
+    handler: IntentHandler  # Callback function
+) -> None:
+    """
+    Register an intent with a trigger phrase and handler.
+    
+    When an utterance is processed that is similar enough to the trigger
+    phrase (above the threshold), the handler will be invoked.
+    """
+```
+
+**Handler signature:**
+
+```python
+def handler(trigger_phrase: str, utterance: str, similarity: float) -> None:
+    pass
+```
+
+- `trigger_phrase`: Your registered command (e.g., "turn on the lights")
+- `utterance`: What the user actually said (e.g., "switch on the lights")
+- `similarity`: Confidence score 0.0-1.0 (e.g., 0.87)
+
+### process_utterance()
+
+From `python/src/moonshine_voice/intent_recognizer.py:255-274`:
+
+```python
+def process_utterance(self, utterance: str) -> bool:
+    """
+    Process an utterance and invoke the handler of the most similar intent.
+    
+    Returns:
+        True if an intent was recognized and handler invoked, False otherwise.
+    """
+```
+
+### Properties and Methods
+
+```python
+# Get/set threshold dynamically
+recognizer.threshold = 0.8
+current = recognizer.threshold
+
+# Get number of registered intents
+count = recognizer.intent_count
+
+# Remove specific intent
+recognizer.unregister_intent("turn on the lights")
+
+# Remove all intents
+recognizer.clear_intents()
+```
+
+## C API Integration
+
+From `core/moonshine-c-api.h:487-574`, the underlying C API:
+
+```c
+// Callback function type
+typedef void (*moonshine_intent_callback)(
+    void *user_data,
+    const char *trigger_phrase,
+    const char *utterance,
+    float similarity
+);
+
+// Create recognizer
+int32_t moonshine_create_intent_recognizer(
+    const char *model_path,
+    uint32_t model_arch,
+    const char *model_variant,
+    float threshold
+);
+
+// Register intent
+int32_t moonshine_register_intent(
+    int32_t intent_recognizer_handle,
+    const char *trigger_phrase,
+    moonshine_intent_callback callback,
+    void *user_data
+);
+
+// Process utterance
+int32_t moonshine_process_utterance(
+    int32_t intent_recognizer_handle,
+    const char *utterance
+);
+```
+
+## Event Flow
+
+From `python/src/moonshine_voice/intent_recognizer.py:324-349`:
+
+```python
+def on_line_completed(self, event: LineCompleted) -> None:
+    """
+    Called when a transcription line is completed.
+    
+    This implements the TranscriptEventListener interface, allowing the
+    IntentRecognizer to automatically process completed transcript lines.
+    """
+    if event.line and event.line.text:
+        # Strip whitespace and process non-empty utterances
+        utterance = event.line.text.strip()
+        if utterance:
+            self.process_utterance(utterance)
+```
+
+When used as a listener:
+
+```
+User speaks → Transcriber → LineCompleted event → IntentRecognizer
+                                                          ↓
+                                                  process_utterance()
+                                                          ↓
+                                                  Compare embeddings
+                                                          ↓
+                                                  Trigger handler if match
+```
+
+## Practical Examples
+
+### Smart Home Control
+
+```python
+from moonshine_voice import IntentRecognizer, MicTranscriber
+
+class SmartHome:
+    def __init__(self):
+        self.lights_on = False
+        self.thermostat_temp = 70
+    
+    def handle_lights_on(self, trigger, utterance, similarity):
+        self.lights_on = True
+        print(f"💡 Lights turned ON")
+    
+    def handle_lights_off(self, trigger, utterance, similarity):
+        self.lights_on = False
+        print(f"💡 Lights turned OFF")
+    
+    def handle_temp_up(self, trigger, utterance, similarity):
+        self.thermostat_temp += 2
+        print(f"🌡️  Temperature set to {self.thermostat_temp}°F")
+    
+    def handle_temp_down(self, trigger, utterance, similarity):
+        self.thermostat_temp -= 2
+        print(f"🌡️  Temperature set to {self.thermostat_temp}°F")
+
+# Setup
+home = SmartHome()
+recognizer = IntentRecognizer(model_path, model_arch, threshold=0.65)
+
+# Register intents
+recognizer.register_intent("turn on the lights", home.handle_lights_on)
+recognizer.register_intent("turn off the lights", home.handle_lights_off)
+recognizer.register_intent("increase temperature", home.handle_temp_up)
+recognizer.register_intent("decrease temperature", home.handle_temp_down)
+
+# Connect to voice
+transcriber = MicTranscriber(model_path, model_arch)
+transcriber.add_listener(recognizer)
+transcriber.start()
+
+# Now responds to natural variations:
+# "switch on lights", "lights on please", "illuminate room" → lights_on
+# "make it warmer", "turn up heat", "increase temp" → temp_up
+```
+
+### Robot Control
+
+```python
+class RobotController:
+    def __init__(self, recognizer):
+        self.setup_intents(recognizer)
+    
+    def setup_intents(self, recognizer):
+        movements = [
+            ("move forward", self.forward),
+            ("move backward", self.backward),
+            ("turn left", self.left),
+            ("turn right", self.right),
+            ("stop moving", self.stop),
+        ]
+        
+        for phrase, handler in movements:
+            recognizer.register_intent(phrase, handler)
+    
+    def forward(self, trigger, utterance, similarity):
+        print("🤖 Moving forward")
+        # robot.move(direction='forward')
+    
+    def backward(self, trigger, utterance, similarity):
+        print("🤖 Moving backward")
+        # robot.move(direction='backward')
+    
+    # ... other handlers
+
+# Natural commands work:
+# "go forward", "advance", "move ahead" → forward
+# "go back", "reverse", "retreat" → backward
+```
+
+### Multi-Language Support
+
+```python
+# Load Spanish models
+model_path, model_arch = get_model_for_language("es")
+embed_path, embed_arch = get_embedding_model("embeddinggemma-300m", "fp32")
+
+transcriber = MicTranscriber(model_path, model_arch)
+recognizer = IntentRecognizer(embed_path, embed_arch, threshold=0.7)
+
+# Register Spanish intents
+recognizer.register_intent(
+    "enciende las luces",
+    lambda t, u, s: print("💡 Luces encendidas")
+)
+recognizer.register_intent(
+    "apaga las luces",
+    lambda t, u, s: print("💡 Luces apagadas")
+)
+
+transcriber.add_listener(recognizer)
+transcriber.start()
+
+# Recognizes: "prende las luces", "activa la luz", etc.
+```
+
+## Threshold Tuning
+
+### Finding the Right Threshold
+
+From `python/src/moonshine_voice/intent_recognizer.py:276-289`:
+
+```python
+@property
+def threshold(self) -> float:
+    """Get the current similarity threshold."""
+    return self._lib.moonshine_get_intent_threshold(self._handle)
+
+@threshold.setter
+def threshold(self, value: float) -> None:
+    """Set the similarity threshold."""
+    error = self._lib.moonshine_set_intent_threshold(self._handle, value)
+```
+
+Experiment with different values:
+
+```python
+recognizer = IntentRecognizer(model_path, model_arch, threshold=0.7)
+
+# Test different thresholds
+for threshold in [0.5, 0.6, 0.7, 0.8, 0.9]:
+    recognizer.threshold = threshold
+    print(f"\nThreshold: {threshold}")
+    
+    test_phrases = [
+        "turn on the lights",
+        "switch on lights",
+        "illuminate the room",
+        "let there be light",
+        "play some music",  # Should not match
+    ]
+    
+    for phrase in test_phrases:
+        matched = recognizer.process_utterance(phrase)
+        print(f"  '{phrase}': {'✓' if matched else '✗'}")
+```
+
+**Typical results:**
+- 0.5: Many false positives, matches unrelated phrases
+- 0.6: Good for diverse expressions, some false positives
+- 0.7: Balanced, recommended default
+- 0.8: Conservative, may miss valid variations
+- 0.9: Very strict, almost exact semantic match required
+
+### Dynamic Threshold Adjustment
+
+```python
+class AdaptiveRecognizer:
+    def __init__(self, recognizer, initial_threshold=0.7):
+        self.recognizer = recognizer
+        self.recognizer.threshold = initial_threshold
+        self.false_positive_count = 0
+        self.true_positive_count = 0
+    
+    def on_intent_detected(self, trigger, utterance, similarity):
+        # Ask user for confirmation
+        confirmed = ask_user_confirmation(trigger)
+        
+        if confirmed:
+            self.true_positive_count += 1
+            # Lower threshold slightly to catch more
+            if self.recognizer.threshold > 0.5:
+                self.recognizer.threshold -= 0.01
+        else:
+            self.false_positive_count += 1
+            # Raise threshold to reduce false positives
+            if self.recognizer.threshold < 0.95:
+                self.recognizer.threshold += 0.02
+        
+        print(f"Adjusted threshold to {self.recognizer.threshold:.2f}")
+```
+
+## Performance Considerations
+
+### Model Quantization
+
+From README.md:405-408, choose variant by platform:
+
+```python
+import platform
+
+# Mobile/embedded: use q4 for speed
+if platform.machine() in ['aarch64', 'armv7l']:
+    variant = "q4"
+# Desktop: balance with q8
+elif platform.system() in ['Linux', 'Windows']:
+    variant = "q8"
+# macOS: can handle fp16
+else:
+    variant = "fp16"
+
+recognizer = IntentRecognizer(
+    model_path, model_arch,
+    model_variant=variant,
+    threshold=0.7
+)
+```
+
+### Caching Embeddings
+
+For frequently used intents, the model caches embeddings internally. Avoid repeatedly registering/unregistering the same intents.
+
+### Batch Processing
+
+If processing many utterances:
+
+```python
+utterances = [
+    "turn on the lights",
+    "what's the weather",
+    "play some music",
+    # ... many more
+]
+
+for utterance in utterances:
+    recognized = recognizer.process_utterance(utterance)
+    if recognized:
+        print(f"Matched: {utterance}")
+```
+
+## Common Patterns
+
+### Intent with Context
+
+```python
+class ContextualAssistant:
+    def __init__(self):
+        self.last_intent = None
+        self.context = {}
+    
+    def handle_set_timer(self, trigger, utterance, similarity):
+        # Extract duration from utterance
+        duration = self.extract_duration(utterance)
+        if duration:
+            print(f"⏱️  Setting timer for {duration} minutes")
+            self.last_intent = "set_timer"
+            self.context['timer_duration'] = duration
+        else:
+            print("How long should the timer be?")
+    
+    def extract_duration(self, text):
+        # Parse "5 minutes", "10 seconds", etc.
+        import re
+        match = re.search(r'(\d+)\s*(minute|second|hour)', text)
+        if match:
+            return int(match.group(1))
+        return None
+```
+
+### Confirmation Flow
+
+```python
+class ConfirmingAssistant:
+    def __init__(self, recognizer):
+        self.recognizer = recognizer
+        self.pending_action = None
+        self.setup_intents()
+    
+    def setup_intents(self):
+        self.recognizer.register_intent("delete all files", self.dangerous_action)
+        self.recognizer.register_intent("yes confirm", self.confirm)
+        self.recognizer.register_intent("no cancel", self.cancel)
+    
+    def dangerous_action(self, trigger, utterance, similarity):
+        self.pending_action = lambda: self.delete_all()
+        print("⚠️  This will delete all files. Are you sure? Say 'yes' or 'no'.")
+    
+    def confirm(self, trigger, utterance, similarity):
+        if self.pending_action:
+            print("Executing action...")
+            self.pending_action()
+            self.pending_action = None
+    
+    def cancel(self, trigger, utterance, similarity):
+        if self.pending_action:
+            print("Action cancelled")
+            self.pending_action = None
+```
+
+### Slot Filling (Future Feature)
+
+From README.md:355:
+
+<Note>
+  The current intent recognition is designed for full-sentence matching. We will be expanding into "slot filling" techniques to extract quantities like "I want ten bananas".
+</Note>
+
+Coming soon: Extract parameters from utterances automatically.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Transcription" icon="microphone" href="/concepts/transcription">
+    Learn about the speech-to-text pipeline
+  </Card>
+  <Card title="Model Architectures" icon="brain" href="/concepts/models">
+    Understand embedding models
+  </Card>
+</CardGroup>

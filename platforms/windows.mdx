@@ -1,0 +1,598 @@
+---
+title: 'Windows Platform Guide'
+description: 'Complete guide to building Moonshine Voice applications on Windows'
+icon: 'windows'
+---
+
+Moonshine Voice provides native C++ support for Windows through Visual Studio, along with Python bindings for easier integration.
+
+## Installation
+
+### Python Package (Recommended)
+
+<Steps>
+  <Step title="Install Python Package">
+    The easiest way to use Moonshine Voice on Windows:
+    
+    ```bash
+    pip install moonshine-voice
+    ```
+    
+    This includes pre-built native libraries for Windows x64.
+  </Step>
+  
+  <Step title="Download Models">
+    Download speech-to-text models:
+    
+    ```bash
+    python -m moonshine_voice.download --language en
+    ```
+    
+    Note the displayed model path and architecture number.
+  </Step>
+  
+  <Step title="Test Installation">
+    Test with microphone transcription:
+    
+    ```bash
+    python -m moonshine_voice.mic_transcriber --language en
+    ```
+  </Step>
+</Steps>
+
+### C++ Library
+
+<Steps>
+  <Step title="Install Prerequisites">
+    You'll need:
+    - **Visual Studio 2022** or later with C++ development tools
+    - **Python 3.8+** (for downloading models)
+    - **CMake 3.22+** (optional, for building from source)
+  </Step>
+  
+  <Step title="Download Pre-built Library">
+    Download the latest Windows library:
+    
+    ```bash
+    # Download library archive
+    curl -L -o moonshine-windows.tar.gz https://github.com/moonshine-ai/moonshine/releases/latest/download/moonshine-voice-windows-x86_64.tar.gz
+    
+    # Extract
+    tar -xzf moonshine-windows.tar.gz
+    ```
+    
+    Or use the download script in examples:
+    ```batch
+    cd examples\windows\cli-transcriber
+    download-lib.bat
+    ```
+  </Step>
+  
+  <Step title="Install Python for Models">
+    Install the Python package to download models:
+    
+    ```bash
+    pip install moonshine-voice
+    python -m moonshine_voice.download --language en
+    ```
+    
+    Note the output paths for use in C++ projects.
+  </Step>
+</Steps>
+
+## Quick Start Example
+
+Download and try the pre-built example:
+
+```bash
+# Download Windows examples
+curl -L -o windows-examples.tar.gz https://github.com/moonshine-ai/moonshine/releases/latest/download/windows-examples.tar.gz
+tar -xzf windows-examples.tar.gz
+
+# Open in Visual Studio
+start cli-transcriber\cli-transcriber.sln
+```
+
+Build (Release, x64) and run from command line:
+
+```batch
+x64\Release\cli-transcriber.exe --model-path "C:\Users\YourName\AppData\Local\moonshine_voice\moonshine_voice\Cache\download.moonshine.ai\model\base-en\quantized\base-en" --model-arch 1
+```
+
+## Python Usage
+
+### Microphone Transcription
+
+```python
+import time
+from moonshine_voice import (
+    MicTranscriber,
+    TranscriptEventListener,
+    get_model_for_language,
+)
+
+# Load models
+model_path, model_arch = get_model_for_language("en")
+
+# Create transcriber (uses WASAPI on Windows)
+mic_transcriber = MicTranscriber(
+    model_path=model_path,
+    model_arch=model_arch
+)
+
+class ConsoleListener(TranscriptEventListener):
+    def on_line_completed(self, event):
+        print(f"Transcribed: {event.line.text}")
+
+listener = ConsoleListener()
+mic_transcriber.add_listener(listener)
+mic_transcriber.start()
+
+print("Listening to microphone (press Ctrl+C to stop)...")
+
+try:
+    while True:
+        time.sleep(0.1)
+except KeyboardInterrupt:
+    print("\nStopping...")
+finally:
+    mic_transcriber.stop()
+    mic_transcriber.close()
+```
+
+### File Transcription
+
+```python
+from moonshine_voice import (
+    Transcriber,
+    load_wav_file,
+    get_model_for_language,
+)
+
+model_path, model_arch = get_model_for_language("en")
+transcriber = Transcriber(model_path=model_path, model_arch=model_arch)
+
+# Transcribe a WAV file
+audio_data, sample_rate = load_wav_file("audio.wav")
+transcript = transcriber.transcribe_without_streaming(
+    audio_data,
+    sample_rate=sample_rate
+)
+
+for line in transcript.lines:
+    print(f"[{line.start_time:.2f}s] {line.text}")
+```
+
+See the [Python Platform Guide](/platforms/python) for more details.
+
+## C++ Implementation
+
+### Visual Studio Project Setup
+
+<Steps>
+  <Step title="Add Include Paths">
+    In Project Properties > C/C++ > General > Additional Include Directories:
+    ```
+    $(SolutionDir)moonshine-voice-windows-x86_64\include
+    ```
+  </Step>
+  
+  <Step title="Add Library Paths">
+    In Project Properties > Linker > General > Additional Library Directories:
+    ```
+    $(SolutionDir)moonshine-voice-windows-x86_64\lib
+    ```
+  </Step>
+  
+  <Step title="Link Libraries">
+    In Project Properties > Linker > Input > Additional Dependencies:
+    ```
+    moonshine.lib
+    onnxruntime.lib
+    ort-utils.lib
+    bin-tokenizer.lib
+    moonshine-utils.lib
+    ```
+  </Step>
+  
+  <Step title="Copy Runtime DLLs">
+    Add a post-build event to copy `onnxruntime.dll`:
+    
+    In Project Properties > Build Events > Post-Build Event:
+    ```batch
+    copy "$(SolutionDir)moonshine-voice-windows-x86_64\lib\onnxruntime.dll" "$(OutDir)"
+    ```
+  </Step>
+</Steps>
+
+### Basic C++ Example
+
+```cpp
+#include "moonshine-cpp.h"
+#include <iostream>
+#include <vector>
+#include <windows.h>
+
+int main(int argc, char** argv) {
+    // Parse command line
+    if (argc < 3) {
+        std::cerr << "Usage: " << argv[0] 
+                  << " --model-path <path> --model-arch <arch>" << std::endl;
+        return 1;
+    }
+    
+    std::string modelPath;
+    int modelArch = 1;  // Default to Base
+    
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--model-path") == 0 && i + 1 < argc) {
+            modelPath = argv[++i];
+        } else if (strcmp(argv[i], "--model-arch") == 0 && i + 1 < argc) {
+            modelArch = atoi(argv[++i]);
+        }
+    }
+    
+    try {
+        // Create transcriber
+        moonshine::Transcriber transcriber(modelPath, modelArch);
+        
+        // Load audio file
+        std::vector<float> audioData;
+        int sampleRate;
+        if (!loadWavFile("test.wav", audioData, sampleRate)) {
+            std::cerr << "Failed to load audio file" << std::endl;
+            return 1;
+        }
+        
+        // Transcribe
+        auto transcript = transcriber.transcribeWithoutStreaming(
+            audioData.data(),
+            audioData.size(),
+            sampleRate
+        );
+        
+        // Print results
+        for (const auto& line : transcript.lines) {
+            std::cout << "[" << line.startTime << "s] " 
+                      << line.text << std::endl;
+        }
+        
+    } catch (const std::exception& e) {
+        std::cerr << "Error: " << e.what() << std::endl;
+        return 1;
+    }
+    
+    return 0;
+}
+```
+
+### Microphone Capture (WASAPI)
+
+Windows uses WASAPI for microphone access:
+
+```cpp
+#include "moonshine-cpp.h"
+#include <windows.h>
+#include <mmdeviceapi.h>
+#include <audioclient.h>
+#include <iostream>
+
+class MicrophoneCapture {
+private:
+    IMMDeviceEnumerator* pEnumerator = nullptr;
+    IMMDevice* pDevice = nullptr;
+    IAudioClient* pAudioClient = nullptr;
+    IAudioCaptureClient* pCaptureClient = nullptr;
+    
+public:
+    bool initialize() {
+        HRESULT hr;
+        
+        // Initialize COM
+        hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+        if (FAILED(hr)) return false;
+        
+        // Create device enumerator
+        hr = CoCreateInstance(
+            __uuidof(MMDeviceEnumerator),
+            nullptr,
+            CLSCTX_ALL,
+            __uuidof(IMMDeviceEnumerator),
+            (void**)&pEnumerator
+        );
+        if (FAILED(hr)) return false;
+        
+        // Get default audio endpoint
+        hr = pEnumerator->GetDefaultAudioEndpoint(
+            eCapture,
+            eConsole,
+            &pDevice
+        );
+        if (FAILED(hr)) return false;
+        
+        // Activate audio client
+        hr = pDevice->Activate(
+            __uuidof(IAudioClient),
+            CLSCTX_ALL,
+            nullptr,
+            (void**)&pAudioClient
+        );
+        if (FAILED(hr)) return false;
+        
+        return true;
+    }
+    
+    bool startCapture(moonshine::Transcriber& transcriber) {
+        // Get audio format
+        WAVEFORMATEX* pwfx = nullptr;
+        HRESULT hr = pAudioClient->GetMixFormat(&pwfx);
+        if (FAILED(hr)) return false;
+        
+        // Initialize audio client
+        hr = pAudioClient->Initialize(
+            AUDCLNT_SHAREMODE_SHARED,
+            0,
+            10000000,  // 1 second buffer
+            0,
+            pwfx,
+            nullptr
+        );
+        CoTaskMemFree(pwfx);
+        if (FAILED(hr)) return false;
+        
+        // Get capture client
+        hr = pAudioClient->GetService(
+            __uuidof(IAudioCaptureClient),
+            (void**)&pCaptureClient
+        );
+        if (FAILED(hr)) return false;
+        
+        // Start capturing
+        hr = pAudioClient->Start();
+        if (FAILED(hr)) return false;
+        
+        transcriber.start();
+        
+        // Capture loop
+        while (true) {
+            Sleep(10);
+            
+            UINT32 packetLength = 0;
+            hr = pCaptureClient->GetNextPacketSize(&packetLength);
+            if (FAILED(hr)) break;
+            
+            while (packetLength != 0) {
+                BYTE* pData;
+                UINT32 numFramesAvailable;
+                DWORD flags;
+                
+                hr = pCaptureClient->GetBuffer(
+                    &pData,
+                    &numFramesAvailable,
+                    &flags,
+                    nullptr,
+                    nullptr
+                );
+                
+                if (FAILED(hr)) break;
+                
+                // Convert to float and add to transcriber
+                std::vector<float> samples(numFramesAvailable);
+                // ... convert pData to samples ...
+                
+                transcriber.addAudio(
+                    samples.data(),
+                    samples.size(),
+                    48000  // Sample rate
+                );
+                
+                hr = pCaptureClient->ReleaseBuffer(numFramesAvailable);
+                if (FAILED(hr)) break;
+                
+                hr = pCaptureClient->GetNextPacketSize(&packetLength);
+            }
+        }
+        
+        transcriber.stop();
+        pAudioClient->Stop();
+        
+        return true;
+    }
+    
+    ~MicrophoneCapture() {
+        if (pCaptureClient) pCaptureClient->Release();
+        if (pAudioClient) pAudioClient->Release();
+        if (pDevice) pDevice->Release();
+        if (pEnumerator) pEnumerator->Release();
+        CoUninitialize();
+    }
+};
+```
+
+<Note>
+The CLI transcriber example includes a complete WASAPI implementation. See `examples/windows/cli-transcriber/` for the full code.
+</Note>
+
+## Building from Source
+
+### Using CMake
+
+```batch
+cd core
+mkdir build
+cd build
+cmake ..
+cmake --build . --config Release
+```
+
+### Using Visual Studio
+
+1. Open `cli-transcriber.sln` in Visual Studio
+2. Select **Release** configuration and **x64** platform
+3. Build > Build Solution (or press F7)
+
+Output will be in `x64\Release\`
+
+### MSBuild Command Line
+
+```batch
+msbuild cli-transcriber.sln /p:Configuration=Release /p:Platform=x64
+```
+
+## Model Management
+
+### Default Cache Location
+
+Models are downloaded to:
+```
+%LOCALAPPDATA%\moonshine_voice\moonshine_voice\Cache\
+```
+
+Example path:
+```
+C:\Users\YourName\AppData\Local\moonshine_voice\moonshine_voice\Cache\download.moonshine.ai\model\base-en\quantized\base-en
+```
+
+### Custom Cache Location
+
+Set environment variable before downloading:
+
+```batch
+set MOONSHINE_VOICE_CACHE=C:\Models\moonshine
+python -m moonshine_voice.download --language en
+```
+
+## Microphone Permissions
+
+Windows 10/11 require microphone permissions:
+
+1. Go to **Settings > Privacy > Microphone**
+2. Enable **Allow apps to access your microphone**
+3. Enable permission for your specific app
+
+Check programmatically:
+
+```cpp
+// Check microphone permission (Windows 10+)
+HRESULT CheckMicrophonePermission() {
+    // Request user consent if needed
+    // Windows will show permission dialog if not granted
+    return S_OK;
+}
+```
+
+## Performance Considerations
+
+### Expected Performance
+
+| CPU | Model | Latency | Load |
+|-----|-------|---------|------|
+| Intel i7-10700 | Tiny Streaming | 75ms | 8% |
+| Intel i7-10700 | Base | 110ms | 12% |
+| AMD Ryzen 5 5600X | Tiny Streaming | 58ms | 6% |
+| AMD Ryzen 5 5600X | Small Streaming | 195ms | 20% |
+
+### Optimization Tips
+
+1. **Use Release builds** - Debug builds are significantly slower
+2. **Choose appropriate model** - Balance accuracy vs performance
+3. **Use streaming models** - Lower latency for real-time apps
+4. **Test on target hardware** - Performance varies significantly
+
+## Common Issues
+
+### DLL Not Found
+
+Ensure `onnxruntime.dll` is in the same directory as your executable:
+
+```batch
+copy moonshine-voice-windows-x86_64\lib\onnxruntime.dll x64\Release\
+```
+
+Or add to system PATH:
+```batch
+set PATH=%PATH%;C:\path\to\moonshine-voice-windows-x86_64\lib
+```
+
+### Linker Errors (LNK2019)
+
+Ensure all libraries are linked:
+- moonshine.lib
+- onnxruntime.lib
+- ort-utils.lib
+- bin-tokenizer.lib
+- moonshine-utils.lib
+
+### Model Path Issues
+
+Use escaped backslashes or forward slashes:
+
+```cpp
+// Correct
+std::string path = "C:\\Users\\Name\\model\\base-en";
+std::string path = "C:/Users/Name/model/base-en";
+
+// Wrong
+std::string path = "C:\Users\Name\model\base-en";  // Escape sequences!
+```
+
+### Python Import Errors
+
+Reinstall with Visual C++ runtime:
+
+```bash
+# Download and install Visual C++ Redistributable
+# https://aka.ms/vs/17/release/vc_redist.x64.exe
+
+# Reinstall package
+pip uninstall moonshine-voice
+pip install --no-cache-dir moonshine-voice
+```
+
+## Building Full Example
+
+Step-by-step to build the CLI transcriber:
+
+```batch
+# 1. Download library
+cd examples\windows\cli-transcriber
+download-lib.bat
+
+# 2. Install Python package for models
+pip install moonshine-voice
+
+# 3. Download models
+python -m moonshine_voice.download --language en
+
+# 4. Build with MSBuild
+msbuild cli-transcriber.sln /p:Configuration=Release /p:Platform=x64
+
+# 5. Run (adjust path to match your download location)
+x64\Release\cli-transcriber.exe --model-path "%LOCALAPPDATA%\moonshine_voice\moonshine_voice\Cache\download.moonshine.ai\model\base-en\quantized\base-en" --model-arch 1
+```
+
+## Example Projects
+
+The repository includes a complete Windows example:
+
+- **cli-transcriber** - Command-line microphone transcriber
+- Located in `examples/windows/cli-transcriber/`
+- Includes full WASAPI implementation
+- Visual Studio project files included
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="C++ API Reference" icon="code" href="/api-reference/cpp">
+    Detailed C++ API documentation
+  </Card>
+  <Card title="Python Guide" icon="python" href="/platforms/python">
+    Using Python on Windows
+  </Card>
+  <Card title="Models" icon="brain" href="/models">
+    Available models and architectures
+  </Card>
+  <Card title="Building from Source" icon="hammer" href="/advanced/building">
+    Advanced build options
+  </Card>
+</CardGroup>

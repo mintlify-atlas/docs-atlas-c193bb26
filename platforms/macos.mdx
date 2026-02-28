@@ -1,0 +1,575 @@
+---
+title: 'macOS Platform Guide'
+description: 'Complete guide to building Moonshine Voice applications on macOS'
+icon: 'apple'
+---
+
+Moonshine Voice provides native macOS support through Swift Package Manager, enabling desktop voice applications with the same API as iOS.
+
+## Installation
+
+<Steps>
+  <Step title="Add Package Dependency">
+    In Xcode, add the Moonshine Swift package:
+    
+    1. Right-click on the file view sidebar
+    2. Choose **"Add Package Dependencies..."** from the menu
+    3. Paste `https://github.com/moonshine-ai/moonshine-swift/` into the search box
+    4. Select **moonshine-swift** and click **"Add Package"**
+  </Step>
+  
+  <Step title="Import the Framework">
+    In your Swift files:
+    
+    ```swift
+    import MoonshineVoice
+    ```
+  </Step>
+  
+  <Step title="Add Model Files">
+    Download models using Python:
+    
+    ```bash
+    pip install moonshine-voice
+    python -m moonshine_voice.download --language en
+    ```
+    
+    Add model files to your Xcode project or reference them from the cache location displayed by the download command.
+  </Step>
+  
+  <Step title="Configure Permissions">
+    Add microphone permission to your `Info.plist` or app's entitlements:
+    
+    ```xml
+    <key>NSMicrophoneUsageDescription</key>
+    <string>This app needs microphone access to transcribe speech</string>
+    ```
+    
+    For sandboxed apps, also enable:
+    - **Audio Input** in Capabilities > App Sandbox
+  </Step>
+</Steps>
+
+## Quick Start Example
+
+Download and try the pre-built examples:
+
+```bash
+# Download macOS examples
+wget https://github.com/moonshine-ai/moonshine/releases/latest/download/macos-examples.tar.gz
+tar -xzf macos-examples.tar.gz
+
+# Open in Xcode
+open MicTranscription/MicTranscription.xcodeproj
+```
+
+Build and run to see live transcription.
+
+## Basic Implementations
+
+### Command-Line Tool
+
+Create a simple command-line transcriber:
+
+```swift
+import Foundation
+import MoonshineVoice
+
+class TranscriberApp {
+    var micTranscriber: MicTranscriber?
+    
+    func run() throws {
+        // Get model path from download location or bundle
+        let homeDir = FileManager.default.homeDirectoryForCurrentUser
+        let modelPath = homeDir
+            .appendingPathComponent("Library/Caches/moonshine_voice")
+            .appendingPathComponent("download.moonshine.ai/model/base-en/quantized/base-en")
+            .path
+        
+        // Create transcriber
+        micTranscriber = try MicTranscriber(
+            modelPath: modelPath,
+            modelArch: .base
+        )
+        
+        // Add event listener
+        micTranscriber?.addListener { event in
+            self.handleEvent(event)
+        }
+        
+        // Start listening
+        print("Listening to microphone... Press Ctrl+C to stop")
+        micTranscriber?.start()
+        
+        // Keep running
+        RunLoop.main.run()
+    }
+    
+    func handleEvent(_ event: TranscriptEvent) {
+        switch event {
+        case .lineStarted(let line):
+            print("\n[Started] ", terminator: "")
+            
+        case .lineTextChanged(let line):
+            // Overwrite current line
+            print("\r\(line.text)", terminator: "")
+            fflush(stdout)
+            
+        case .lineCompleted(let line):
+            print("\r\(line.text)")
+        }
+    }
+}
+
+// Entry point
+do {
+    let app = TranscriberApp()
+    try app.run()
+} catch {
+    print("Error: \(error)")
+    exit(1)
+}
+```
+
+### SwiftUI Application
+
+Build a full GUI application:
+
+```swift
+import SwiftUI
+import MoonshineVoice
+
+struct ContentView: View {
+    @StateObject private var viewModel = TranscriberViewModel()
+    
+    var body: some View {
+        VStack {
+            // Transcript display
+            ScrollView {
+                ScrollViewReader { proxy in
+                    VStack(alignment: .leading, spacing: 12) {
+                        ForEach(viewModel.lines) { line in
+                            HStack(alignment: .top) {
+                                Text(formatTime(line.startTime))
+                                    .font(.system(.caption, design: .monospaced))
+                                    .foregroundColor(.secondary)
+                                    .frame(width: 60, alignment: .trailing)
+                                
+                                Text(line.text)
+                                    .textSelection(.enabled)
+                            }
+                            .padding(.horizontal)
+                        }
+                        Color.clear
+                            .frame(height: 1)
+                            .id("bottom")
+                    }
+                    .onChange(of: viewModel.lines.count) { _, _ in
+                        withAnimation {
+                            proxy.scrollTo("bottom")
+                        }
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color(nsColor: .textBackgroundColor))
+            
+            Divider()
+            
+            // Controls
+            HStack(spacing: 16) {
+                Button(action: { viewModel.toggleRecording() }) {
+                    HStack {
+                        Image(systemName: viewModel.isRecording ? "stop.circle.fill" : "mic.circle.fill")
+                            .font(.title2)
+                        Text(viewModel.isRecording ? "Stop" : "Record")
+                    }
+                    .frame(width: 120)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(viewModel.isRecording ? .red : .blue)
+                
+                Button("Clear") {
+                    viewModel.clearTranscript()
+                }
+                .buttonStyle(.bordered)
+                
+                Spacer()
+                
+                if viewModel.isRecording {
+                    HStack(spacing: 4) {
+                        Circle()
+                            .fill(Color.red)
+                            .frame(width: 8, height: 8)
+                            .opacity(viewModel.isRecording ? 1 : 0)
+                            .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: viewModel.isRecording)
+                        Text("Recording")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+            .padding()
+        }
+        .frame(minWidth: 600, minHeight: 400)
+        .onAppear {
+            viewModel.setup()
+        }
+    }
+    
+    func formatTime(_ time: Double) -> String {
+        let minutes = Int(time) / 60
+        let seconds = Int(time) % 60
+        return String(format: "%d:%02d", minutes, seconds)
+    }
+}
+
+class TranscriberViewModel: ObservableObject {
+    @Published var lines: [TranscriptLine] = []
+    @Published var isRecording = false
+    
+    private var transcriber: MicTranscriber?
+    
+    func setup() {
+        do {
+            let modelPath = getModelPath()
+            transcriber = try MicTranscriber(
+                modelPath: modelPath,
+                modelArch: .base
+            )
+            
+            transcriber?.addListener { [weak self] event in
+                DispatchQueue.main.async {
+                    self?.handleEvent(event)
+                }
+            }
+        } catch {
+            print("Failed to setup transcriber: \(error)")
+        }
+    }
+    
+    func toggleRecording() {
+        isRecording.toggle()
+        
+        if isRecording {
+            transcriber?.start()
+        } else {
+            transcriber?.stop()
+        }
+    }
+    
+    func clearTranscript() {
+        lines.removeAll()
+    }
+    
+    private func handleEvent(_ event: TranscriptEvent) {
+        switch event {
+        case .lineStarted(let line):
+            lines.append(line)
+            
+        case .lineTextChanged(let line):
+            if let index = lines.firstIndex(where: { $0.lineId == line.lineId }) {
+                lines[index] = line
+            }
+            
+        case .lineCompleted(let line):
+            if let index = lines.firstIndex(where: { $0.lineId == line.lineId }) {
+                lines[index] = line
+            }
+        }
+    }
+    
+    private func getModelPath() -> String {
+        // Try bundle first, then cache location
+        if let bundlePath = Bundle.main.path(forResource: "base-en", ofType: nil) {
+            return bundlePath
+        }
+        
+        let homeDir = FileManager.default.homeDirectoryForCurrentUser
+        return homeDir
+            .appendingPathComponent("Library/Caches/moonshine_voice")
+            .appendingPathComponent("download.moonshine.ai/model/base-en/quantized/base-en")
+            .path
+    }
+}
+
+struct TranscriptLine: Identifiable {
+    let id: Int64  // Use lineId
+    let text: String
+    let startTime: Double
+    let duration: Double
+    let lineId: Int64
+}
+```
+
+## File Transcription Example
+
+Transcribe audio files using Swift:
+
+```swift
+import Foundation
+import MoonshineVoice
+import AVFoundation
+
+func transcribeFiles(_ paths: [String]) throws {
+    let modelPath = getModelPath()
+    let transcriber = try Transcriber(
+        modelPath: modelPath,
+        modelArch: .base
+    )
+    
+    for path in paths {
+        print("Transcribing: \(path)")
+        
+        // Load audio file
+        let url = URL(fileURLWithPath: path)
+        let file = try AVAudioFile(forReading: url)
+        
+        // Read audio data
+        let format = file.processingFormat
+        let frameCount = UInt32(file.length)
+        let buffer = AVAudioPCMBuffer(
+            pcmFormat: format, 
+            frameCapacity: frameCount
+        )!
+        try file.read(into: buffer)
+        
+        // Convert to mono float array
+        let audioData = bufferToMono(buffer)
+        
+        // Transcribe
+        let transcript = try transcriber.transcribeWithoutStreaming(
+            audioData: audioData,
+            sampleRate: Int(format.sampleRate)
+        )
+        
+        // Print results
+        print("Results:")
+        for line in transcript.lines {
+            let timestamp = formatTimestamp(
+                line.startTime, 
+                line.startTime + line.duration
+            )
+            print("  \(timestamp) \(line.text)")
+        }
+        print()
+    }
+}
+
+func bufferToMono(_ buffer: AVAudioPCMBuffer) -> [Float] {
+    guard let floatData = buffer.floatChannelData else { return [] }
+    let frameCount = Int(buffer.frameLength)
+    let channelCount = Int(buffer.format.channelCount)
+    
+    if channelCount == 1 {
+        return Array(UnsafeBufferPointer(
+            start: floatData[0], 
+            count: frameCount
+        ))
+    }
+    
+    // Average channels for stereo/multi-channel
+    var mono = [Float]()
+    mono.reserveCapacity(frameCount)
+    
+    for frame in 0..<frameCount {
+        var sum: Float = 0
+        for channel in 0..<channelCount {
+            sum += floatData[channel][frame]
+        }
+        mono.append(sum / Float(channelCount))
+    }
+    
+    return mono
+}
+
+func formatTimestamp(_ start: Double, _ end: Double) -> String {
+    String(format: "[%.2fs - %.2fs]", start, end)
+}
+```
+
+## Building with Swift Package Manager
+
+For command-line tools, create a `Package.swift`:
+
+```swift
+// swift-tools-version: 5.9
+import PackageDescription
+
+let package = Package(
+    name: "MyTranscriber",
+    platforms: [.macOS(.v13)],
+    dependencies: [
+        .package(
+            url: "https://github.com/moonshine-ai/moonshine-swift",
+            from: "0.0.49"
+        )
+    ],
+    targets: [
+        .executableTarget(
+            name: "MyTranscriber",
+            dependencies: [
+                .product(name: "MoonshineVoice", package: "moonshine-swift")
+            ]
+        )
+    ]
+)
+```
+
+Build and run:
+
+```bash
+swift build
+.build/debug/MyTranscriber
+```
+
+## Supported Languages
+
+Download and use models for different languages:
+
+```bash
+# Download models
+python -m moonshine_voice.download --language en
+python -m moonshine_voice.download --language es
+python -m moonshine_voice.download --language ja
+```
+
+```swift
+// Load different languages
+let enTranscriber = try Transcriber(modelPath: "path/to/base-en", modelArch: .base)
+let esTranscriber = try Transcriber(modelPath: "path/to/base-es", modelArch: .base)
+let jaTranscriber = try Transcriber(modelPath: "path/to/base-ja", modelArch: .base)
+```
+
+## Performance Considerations
+
+### Model Performance on Apple Silicon
+
+| Model | Size | M1 Latency | M2 Latency | Memory |
+|-------|------|------------|------------|--------|
+| Tiny | 26MB | 25ms | 20ms | ~80MB |
+| Tiny Streaming | 34MB | 20ms | 15ms | ~90MB |
+| Base | 58MB | 35ms | 28ms | ~150MB |
+| Small Streaming | 123MB | 55ms | 45ms | ~280MB |
+| Medium Streaming | 245MB | 90ms | 75ms | ~500MB |
+
+### Optimization Tips
+
+1. **Use streaming models** for real-time applications (lower latency)
+2. **Leverage Apple Silicon** - M1/M2 Macs provide excellent performance
+3. **Adjust update interval** - Balance between UI updates and CPU usage
+4. **Consider model size** - Larger models = better accuracy but more resources
+
+## Common Issues
+
+### Microphone Permission
+
+Request permission before starting transcription:
+
+```swift
+import AVFoundation
+
+func requestMicrophoneAccess() async -> Bool {
+    switch AVCaptureDevice.authorizationStatus(for: .audio) {
+    case .authorized:
+        return true
+    case .notDetermined:
+        return await AVCaptureDevice.requestAccess(for: .audio)
+    case .denied, .restricted:
+        return false
+    @unknown default:
+        return false
+    }
+}
+
+// Usage
+Task {
+    if await requestMicrophoneAccess() {
+        // Start transcription
+    } else {
+        // Show error or open system preferences
+    }
+}
+```
+
+### Model Path Issues
+
+Find models in the download cache:
+
+```bash
+# Default cache location
+~/Library/Caches/moonshine_voice/download.moonshine.ai/model/base-en/quantized/base-en
+```
+
+Or programmatically:
+
+```swift
+func findModelPath() -> String? {
+    let homeDir = FileManager.default.homeDirectoryForCurrentUser
+    let cachePath = homeDir
+        .appendingPathComponent("Library/Caches/moonshine_voice")
+        .appendingPathComponent("download.moonshine.ai/model/base-en/quantized/base-en")
+    
+    if FileManager.default.fileExists(atPath: cachePath.path) {
+        return cachePath.path
+    }
+    return nil
+}
+```
+
+### Sandboxing Issues
+
+For sandboxed apps:
+1. Enable **Audio Input** in App Sandbox capabilities
+2. Add microphone usage description to Info.plist
+3. Use App Group for sharing models between apps
+
+## Example Projects
+
+The repository includes complete examples:
+
+- **BasicTranscription** - Command-line file transcription
+- **MicTranscription** - GUI app with live microphone transcription
+- Located in `examples/macos/`
+
+## Deployment
+
+### Building for Distribution
+
+```bash
+# Build release version
+swift build -c release
+
+# Archive in Xcode
+# Product > Archive
+# Distribute to Mac App Store or direct distribution
+```
+
+### Notarization
+
+For distribution outside the Mac App Store:
+1. Code sign your app
+2. Submit for notarization
+3. Staple the notarization ticket
+
+```bash
+xcrun notarytool submit MyApp.zip --keychain-profile "AC_PASSWORD"
+xcrun stapler staple MyApp.app
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="API Reference" icon="code" href="/api-reference/swift">
+    Detailed Swift API documentation
+  </Card>
+  <Card title="Models" icon="brain" href="/models">
+    Available models and architectures
+  </Card>
+  <Card title="iOS Guide" icon="mobile" href="/platforms/ios">
+    Using Moonshine on iOS
+  </Card>
+  <Card title="Examples" icon="flask" href="/examples/macos">
+    More macOS examples
+  </Card>
+</CardGroup>

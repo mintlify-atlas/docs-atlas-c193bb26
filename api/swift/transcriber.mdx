@@ -1,0 +1,334 @@
+---
+title: "Transcriber"
+description: "Swift API reference for the Transcriber class"
+---
+
+## Overview
+
+The `Transcriber` class is the main entry point for Moonshine Voice in Swift. It handles loading models and managing transcription sessions.
+
+## Initialization
+
+### init(modelPath:modelArch:options:)
+
+Initialize a transcriber from model files on disk.
+
+```swift
+public init(
+    modelPath: String,
+    modelArch: ModelArch = .base,
+    options: [TranscriberOption]? = nil
+) throws
+```
+
+<ParamField path="modelPath" type="String" required>
+  Path to the directory containing model files (encoder_model.ort, decoder_model_merged.ort, tokenizer.bin)
+</ParamField>
+
+<ParamField path="modelArch" type="ModelArch" default=".base">
+  Model architecture to use. Options: `.tiny`, `.base`, `.tinyStreaming`, `.baseStreaming`, `.smallStreaming`, `.mediumStreaming`
+</ParamField>
+
+<ParamField path="options" type="[TranscriberOption]?">
+  Optional transcriber options for advanced configuration
+</ParamField>
+
+**Throws:** `MoonshineError` if the transcriber cannot be loaded
+
+**Example:**
+
+```swift
+import MoonshineVoice
+
+do {
+    let transcriber = try Transcriber(
+        modelPath: "/path/to/models",
+        modelArch: .base
+    )
+} catch {
+    print("Failed to initialize transcriber: \(error)")
+}
+```
+
+## Non-Streaming Transcription
+
+### transcribeWithoutStreaming(audioData:sampleRate:flags:)
+
+Transcribe audio data without streaming.
+
+```swift
+public func transcribeWithoutStreaming(
+    audioData: [Float],
+    sampleRate: Int32 = 16000,
+    flags: UInt32 = 0
+) throws -> Transcript
+```
+
+<ParamField path="audioData" type="[Float]" required>
+  Array of PCM audio samples (float values from -1.0 to 1.0)
+</ParamField>
+
+<ParamField path="sampleRate" type="Int32" default="16000">
+  Sample rate in Hz
+</ParamField>
+
+<ParamField path="flags" type="UInt32" default="0">
+  Flags for transcription
+</ParamField>
+
+**Returns:** A `Transcript` object containing the transcription lines
+
+**Throws:** `MoonshineError` if transcription fails
+
+**Example:**
+
+```swift
+let audioData: [Float] = // ... load audio data
+
+do {
+    let transcript = try transcriber.transcribeWithoutStreaming(
+        audioData: audioData,
+        sampleRate: 16000
+    )
+    
+    for line in transcript.lines {
+        print("[\(line.startTime)s] \(line.text)")
+    }
+} catch {
+    print("Transcription failed: \(error)")
+}
+```
+
+## Streaming Transcription (Default Stream)
+
+The transcriber provides convenience methods that operate on a default stream:
+
+### start()
+
+Start the default stream.
+
+```swift
+public func start() throws
+```
+
+**Throws:** `MoonshineError` if starting fails
+
+### stop()
+
+Stop the default stream and process any remaining audio.
+
+```swift
+public func stop() throws
+```
+
+**Throws:** `MoonshineError` if stopping fails
+
+### addAudio(_:sampleRate:)
+
+Add audio data to the default stream.
+
+```swift
+public func addAudio(_ audioData: [Float], sampleRate: Int32) throws
+```
+
+<ParamField path="audioData" type="[Float]" required>
+  Array of PCM audio samples (float values from -1.0 to 1.0)
+</ParamField>
+
+<ParamField path="sampleRate" type="Int32" required>
+  Sample rate in Hz
+</ParamField>
+
+**Throws:** `MoonshineError` if adding audio fails
+
+### updateTranscription()
+
+Manually update the transcription from the default stream.
+
+```swift
+public func updateTranscription() throws -> Transcript
+```
+
+**Returns:** The current transcript
+
+**Throws:** `MoonshineError` if updating fails
+
+## Event Listeners
+
+### addListener(_:)
+
+Add an event listener to the default stream. Supports both closure-based and protocol-based listeners.
+
+```swift
+public func addListener(_ listener: @escaping (TranscriptEvent) throws -> Void) throws
+public func addListener(_ listener: TranscriptEventListener) throws
+```
+
+**Example with closure:**
+
+```swift
+try transcriber.addListener { event in
+    if let lineCompleted = event as? LineCompleted {
+        print("Completed: \(lineCompleted.line.text)")
+    }
+}
+```
+
+**Example with protocol:**
+
+```swift
+class MyListener: TranscriptEventListener {
+    func onLineStarted(_ event: LineStarted) {
+        print("Line started: \(event.line.text)")
+    }
+    
+    func onLineCompleted(_ event: LineCompleted) {
+        print("Line completed: \(event.line.text)")
+    }
+}
+
+let listener = MyListener()
+try transcriber.addListener(listener)
+```
+
+### removeListener(_:)
+
+Remove an event listener from the default stream.
+
+```swift
+public func removeListener(_ listener: @escaping (TranscriptEvent) throws -> Void) throws
+public func removeListener(_ listener: TranscriptEventListener) throws
+```
+
+### removeAllListeners()
+
+Remove all event listeners from the default stream.
+
+```swift
+public func removeAllListeners() throws
+```
+
+## Stream Management
+
+### createStream(updateInterval:flags:)
+
+Create a new stream for real-time transcription.
+
+```swift
+public func createStream(
+    updateInterval: TimeInterval = 0.5,
+    flags: UInt32 = 0
+) throws -> Stream
+```
+
+<ParamField path="updateInterval" type="TimeInterval" default="0.5">
+  Interval in seconds between automatic updates
+</ParamField>
+
+<ParamField path="flags" type="UInt32" default="0">
+  Flags for stream creation
+</ParamField>
+
+**Returns:** A `Stream` object for real-time transcription
+
+**Throws:** `MoonshineError` if stream creation fails
+
+**Example:**
+
+```swift
+let stream = try transcriber.createStream(updateInterval: 0.3)
+
+stream.addListener { event in
+    if let lineTextChanged = event as? LineTextChanged {
+        print("Updated text: \(lineTextChanged.line.text)")
+    }
+}
+
+try stream.start()
+
+// Feed audio to stream
+let audioData: [Float] = // ... audio data
+try stream.addAudio(audioData, sampleRate: 16000)
+
+try stream.stop()
+stream.close()
+```
+
+### getDefaultStream()
+
+Get the default stream.
+
+```swift
+public func getDefaultStream() throws -> Stream
+```
+
+**Returns:** The default stream
+
+**Throws:** `MoonshineError` if stream creation fails
+
+## Other Methods
+
+### getVersion()
+
+Get the version of the loaded Moonshine library.
+
+```swift
+public func getVersion() -> Int32
+```
+
+**Returns:** The version number
+
+### close()
+
+Free the transcriber resources.
+
+```swift
+public func close()
+```
+
+## Complete Example
+
+```swift
+import MoonshineVoice
+
+class MyListener: TranscriptEventListener {
+    func onLineStarted(_ event: LineStarted) {
+        print("Started: \(event.line.text)")
+    }
+    
+    func onLineTextChanged(_ event: LineTextChanged) {
+        print("Updated: \(event.line.text)")
+    }
+    
+    func onLineCompleted(_ event: LineCompleted) {
+        print("Completed: \(event.line.text)")
+    }
+}
+
+do {
+    // Initialize transcriber
+    let transcriber = try Transcriber(
+        modelPath: "/path/to/models",
+        modelArch: .base
+    )
+    
+    // Add listener
+    let listener = MyListener()
+    try transcriber.addListener(listener)
+    
+    // Start transcription
+    try transcriber.start()
+    
+    // Feed audio data
+    let audioData: [Float] = // ... load audio
+    try transcriber.addAudio(audioData, sampleRate: 16000)
+    
+    // Stop transcription
+    try transcriber.stop()
+    
+    // Clean up
+    transcriber.close()
+} catch {
+    print("Error: \(error)")
+}
+```

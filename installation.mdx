@@ -1,0 +1,711 @@
+---
+title: 'Installation'
+description: 'Install Moonshine Voice across all platforms'
+---
+
+## Overview
+
+Moonshine Voice provides native packages for all major platforms using standard package managers. Choose your platform below:
+
+<CardGroup cols={3}>
+  <Card title="Python" icon="python" href="#python">
+    pip install
+  </Card>
+  <Card title="iOS/macOS" icon="apple" href="#ios-and-macos">
+    Swift Package Manager
+  </Card>
+  <Card title="Android" icon="android" href="#android">
+    Maven/Gradle
+  </Card>
+  <Card title="Windows" icon="windows" href="#windows">
+    Visual Studio
+  </Card>
+  <Card title="Linux" icon="linux" href="#linux">
+    CMake build
+  </Card>
+  <Card title="Raspberry Pi" icon="microchip" href="#raspberry-pi">
+    Python pip
+  </Card>
+</CardGroup>
+
+## Python
+
+The easiest way to get started with Moonshine Voice.
+
+### Installation
+
+<CodeGroup>
+
+```bash pip
+pip install moonshine-voice
+```
+
+```bash uv (recommended)
+uv pip install moonshine-voice
+```
+
+```bash Poetry
+poetry add moonshine-voice
+```
+
+</CodeGroup>
+
+### Requirements
+
+- **Python**: 3.8 or newer
+- **Dependencies**: numpy, sounddevice, requests, tqdm, filelock, platformdirs (installed automatically)
+- **Platforms**: Linux, macOS, Windows
+
+### Quick Test
+
+Verify installation by transcribing from your microphone:
+
+```bash
+python -m moonshine_voice.mic_transcriber --language en
+```
+
+### Import in Code
+
+```python
+from moonshine_voice import Transcriber, MicTranscriber
+from moonshine_voice import download_model, load_wav_file
+
+print("Moonshine Voice installed successfully!")
+```
+
+## iOS and macOS
+
+Moonshine Voice uses Swift Package Manager for iOS and macOS integration.
+
+### Swift Package Manager
+
+<Steps>
+  <Step title="Open Xcode Project">
+    Open your project in Xcode.
+  </Step>
+
+  <Step title="Add Package Dependency">
+    Right-click on the file view sidebar and choose:
+    
+    **Add Package Dependencies...**
+  </Step>
+
+  <Step title="Enter Repository URL">
+    In the dialog, paste the repository URL:
+    
+    ```
+    https://github.com/moonshine-ai/moonshine-swift/
+    ```
+    
+    Select `moonshine-swift` when it appears and click **Add Package**.
+  </Step>
+
+  <Step title="Import in Swift">
+    Import the framework in your Swift files:
+    
+    ```swift
+    import MoonshineVoice
+    ```
+  </Step>
+
+  <Step title="Add Model Files">
+    Download model files using the Python package:
+    
+    ```bash
+    pip install moonshine-voice
+    python -m moonshine_voice.download --language en
+    ```
+    
+    Add the downloaded model files to your app bundle and ensure they're copied during deployment.
+  </Step>
+</Steps>
+
+### Requirements
+
+- **iOS**: 14.0 or later
+- **macOS**: 13.0 or later
+- **Xcode**: 13.0 or later
+
+### Example Projects
+
+Download ready-to-run examples:
+
+<CodeGroup>
+
+```bash iOS
+curl -L https://github.com/moonshine-ai/moonshine/releases/latest/download/ios-examples.tar.gz -o ios-examples.tar.gz
+tar -xzf ios-examples.tar.gz
+open Transcriber/Transcriber.xcodeproj
+```
+
+```bash macOS
+curl -L https://github.com/moonshine-ai/moonshine/releases/latest/download/macos-examples.tar.gz -o macos-examples.tar.gz
+tar -xzf macos-examples.tar.gz
+open MicTranscription/MicTranscription.xcodeproj
+```
+
+</CodeGroup>
+
+### Package.swift (for Libraries)
+
+If you're building a library that depends on Moonshine:
+
+```swift Package.swift
+// swift-tools-version: 6.1
+import PackageDescription
+
+let package = Package(
+    name: "YourPackage",
+    platforms: [
+        .iOS(.v14),
+        .macOS(.v13),
+    ],
+    dependencies: [
+        .package(
+            url: "https://github.com/moonshine-ai/moonshine-swift/",
+            from: "0.0.49"
+        )
+    ],
+    targets: [
+        .target(
+            name: "YourTarget",
+            dependencies: [
+                .product(name: "MoonshineVoice", package: "moonshine-swift")
+            ]
+        )
+    ]
+)
+```
+
+## Android
+
+Moonshine Voice is distributed via Maven Central for Android projects.
+
+### Gradle Setup
+
+<Steps>
+  <Step title="Add Version to libs.versions.toml">
+    In your `gradle/libs.versions.toml` file, add:
+    
+    ```toml gradle/libs.versions.toml
+    [versions]
+    moonshineVoice = "0.0.49"
+    
+    [libraries]
+    moonshine-voice = { group = "ai.moonshine", name = "moonshine-voice", version.ref = "moonshineVoice" }
+    ```
+  </Step>
+
+  <Step title="Add Dependency to build.gradle.kts">
+    In your `app/build.gradle.kts`, add to dependencies:
+    
+    ```kotlin app/build.gradle.kts
+    dependencies {
+        implementation(libs.moonshine.voice)
+        // ... other dependencies
+    }
+    ```
+  </Step>
+
+  <Step title="Sync Project">
+    Click **Sync Now** in Android Studio to download the library.
+  </Step>
+
+  <Step title="Import in Kotlin/Java">
+    ```kotlin MainActivity.kt
+    import ai.moonshine.MoonshineVoice
+    import ai.moonshine.Transcriber
+    ```
+  </Step>
+</Steps>
+
+### Requirements
+
+- **Android SDK**: 21 (Android 5.0) or higher
+- **Build System**: Gradle 7.0+
+- **Languages**: Kotlin or Java
+
+### Example Project
+
+Download a complete Android Studio project:
+
+```bash
+curl -L https://github.com/moonshine-ai/moonshine/releases/latest/download/android-examples.tar.gz -o android-examples.tar.gz
+tar -xzf android-examples.tar.gz
+# Open the Transcriber folder in Android Studio
+```
+
+### Maven Central
+
+View the package on Maven Central: [ai.moonshine:moonshine-voice](https://mvnrepository.com/artifact/ai.moonshine/moonshine-voice)
+
+## Windows
+
+For Windows developers using Visual Studio and C++.
+
+### Download Library Files
+
+<Steps>
+  <Step title="Install Python Package">
+    First, install the Python package for model management:
+    
+    ```batch
+    pip install moonshine-voice
+    ```
+  </Step>
+
+  <Step title="Download C++ Library">
+    Use the provided download script from the examples:
+    
+    ```batch
+    curl -L https://github.com/moonshine-ai/moonshine/releases/latest/download/windows-examples.tar.gz -o windows-examples.tar.gz
+    tar -xzf windows-examples.tar.gz
+    cd examples\windows\cli-transcriber
+    .\download-lib.bat
+    ```
+    
+    This downloads the library files and headers to a local directory.
+  </Step>
+
+  <Step title="Build Example Project">
+    Build the example using MSBuild:
+    
+    ```batch
+    msbuild cli-transcriber.sln /p:Configuration=Release /p:Platform=x64
+    ```
+  </Step>
+
+  <Step title="Download Models">
+    ```batch
+    python -m moonshine_voice.download --language en
+    ```
+    
+    Note the model path and architecture number from the output.
+  </Step>
+
+  <Step title="Run Example">
+    ```batch
+    x64\Release\cli-transcriber.exe --model-path <path> --model-arch <number>
+    ```
+  </Step>
+</Steps>
+
+### Visual Studio Project Setup
+
+To add Moonshine to your own Visual Studio project:
+
+1. **Add Include Directory**: Add the `include` folder to your project's include search paths
+2. **Add Library Directory**: Add the `lib` folder to your library search paths
+3. **Link Libraries**: Add all `.lib` files from the `lib` folder to linker dependencies
+4. **Include Header**: `#include "moonshine-cpp.h"` in your C++ code
+
+### Requirements
+
+- **Visual Studio**: 2019 or later
+- **Platform**: x64 only
+- **Language**: C++17 or later
+
+## Linux
+
+Build from source using CMake for native Linux applications.
+
+### Build from Source
+
+<Steps>
+  <Step title="Clone Repository">
+    ```bash
+    git clone https://github.com/moonshine-ai/moonshine.git
+    cd moonshine
+    ```
+  </Step>
+
+  <Step title="Build with CMake">
+    ```bash
+    cd core
+    mkdir build
+    cd build
+    cmake ..
+    cmake --build .
+    ```
+  </Step>
+
+  <Step title="Run Tests">
+    ```bash
+    cd ../test-assets
+    ../build/moonshine-cpp-test
+    ```
+  </Step>
+</Steps>
+
+### Python Installation (Easier)
+
+For most Linux users, the Python package is the simplest option:
+
+```bash
+pip install moonshine-voice
+python -m moonshine_voice.mic_transcriber --language en
+```
+
+### Requirements
+
+- **Compiler**: GCC 7+ or Clang 6+
+- **CMake**: 3.15 or later
+- **Dependencies**: Included via submodules
+
+### Build Script
+
+Use the automated test script:
+
+```bash
+./scripts/run-core-tests.sh
+```
+
+## Raspberry Pi
+
+Moonshine Voice is optimized for Raspberry Pi with special performance tuning.
+
+### Installation
+
+<Steps>
+  <Step title="Connect USB Microphone">
+    Plug in a USB microphone for audio input.
+  </Step>
+
+  <Step title="Install Moonshine">
+    ```bash
+    sudo pip install --break-system-packages moonshine-voice
+    ```
+    
+    <Warning>
+      The `--break-system-packages` flag is needed on Raspberry Pi OS. Alternatively, use a virtual environment (see below).
+    </Warning>
+  </Step>
+
+  <Step title="Run Transcriber">
+    ```bash
+    python -m moonshine_voice.mic_transcriber --language en
+    ```
+  </Step>
+</Steps>
+
+### Using Virtual Environment (Recommended)
+
+To avoid system package conflicts:
+
+```bash
+python -m venv moonshine_env
+source moonshine_env/bin/activate
+pip install moonshine-voice
+python -m moonshine_voice.mic_transcriber --language en
+```
+
+### Performance
+
+On Raspberry Pi 5:
+
+| Model | Latency |
+|-------|----------|
+| Tiny Streaming | 237ms |
+| Small Streaming | 527ms |
+| Medium Streaming | 802ms |
+
+<Tip>
+  Use the Tiny or Small Streaming models for best real-time performance on Raspberry Pi.
+</Tip>
+
+### Example Projects
+
+Download Pi-specific examples:
+
+```bash
+curl -L https://github.com/moonshine-ai/moonshine/releases/latest/download/raspberry-pi-examples.tar.gz -o rpi-examples.tar.gz
+tar -xzf rpi-examples.tar.gz
+```
+
+### Video Tutorial
+
+Watch the [Raspberry Pi setup screencast](https://www.youtube.com/watch?v=NNcqx1wFxl0) on YouTube.
+
+## Model Installation
+
+All platforms require downloading model files before use.
+
+### Download Models
+
+<CodeGroup>
+
+```bash Python Method (Recommended)
+pip install moonshine-voice
+python -m moonshine_voice.download --language en
+```
+
+```bash Specify Model Architecture
+python -m moonshine_voice.download --language en --model-arch 4
+```
+
+```bash Different Language
+python -m moonshine_voice.download --language es
+```
+
+</CodeGroup>
+
+### Supported Languages
+
+| Language | Code | Model Size |
+|----------|------|------------|
+| English | `en` | Multiple (tiny to medium) |
+| Spanish | `es` | Base |
+| Mandarin | `zh` | Base |
+| Japanese | `ja` | Base |
+| Korean | `ko` | Tiny |
+| Vietnamese | `vi` | Base |
+| Ukrainian | `uk` | Base |
+| Arabic | `ar` | Base |
+
+### Model Cache Location
+
+Models are cached in:
+
+<Tabs>
+  <Tab title="macOS">
+    ```
+    ~/Library/Caches/moonshine_voice/
+    ```
+  </Tab>
+  <Tab title="Linux">
+    ```
+    ~/.cache/moonshine_voice/
+    ```
+  </Tab>
+  <Tab title="Windows">
+    ```
+    %LOCALAPPDATA%\moonshine_voice\
+    ```
+  </Tab>
+</Tabs>
+
+Customize cache location:
+
+```bash
+export MOONSHINE_VOICE_CACHE=/path/to/models
+python -m moonshine_voice.download --language en
+```
+
+### Available Model Architectures
+
+From `moonshine-c-api.h`:
+
+- `0` - Tiny (26M params, 12.66% WER)
+- `1` - Base (58M params, 10.07% WER)
+- `2` - Tiny Streaming (34M params, 12.00% WER)
+- `3` - Small Streaming (123M params, 7.84% WER)
+- `4` - Medium Streaming (245M params, 6.65% WER)
+
+<Info>
+  If no architecture is specified, the highest-quality model available for that language is downloaded.
+</Info>
+
+## Verification
+
+Test your installation:
+
+<Tabs>
+  <Tab title="Python">
+    ```python
+    from moonshine_voice import Transcriber
+    from moonshine_voice import download_model
+    
+    model_path, model_arch = download_model(language="en")
+    transcriber = Transcriber(model_path=model_path, model_arch=model_arch)
+    print("✅ Moonshine Voice installed successfully!")
+    ```
+  </Tab>
+  
+  <Tab title="Swift">
+    ```swift
+    import MoonshineVoice
+    
+    // If this compiles, installation successful
+    print("✅ Moonshine Voice installed successfully!")
+    ```
+  </Tab>
+  
+  <Tab title="Android">
+    ```kotlin
+    import ai.moonshine.Transcriber
+    
+    // If this compiles, installation successful
+    println("✅ Moonshine Voice installed successfully!")
+    ```
+  </Tab>
+  
+  <Tab title="C++">
+    ```cpp
+    #include "moonshine-cpp.h"
+    
+    // If this compiles and links, installation successful
+    std::cout << "✅ Moonshine Voice installed successfully!" << std::endl;
+    ```
+  </Tab>
+</Tabs>
+
+## Building from Source
+
+For advanced users who want to customize the library.
+
+### Prerequisites
+
+- **CMake**: 3.15+
+- **C++ Compiler**: C++17 support
+- **Git**: For cloning submodules
+
+### Complete Build
+
+```bash
+git clone https://github.com/moonshine-ai/moonshine.git
+cd moonshine
+
+# Build core library
+cd core
+mkdir build && cd build
+cmake ..
+cmake --build . --config Release
+
+# Run tests
+cd ../test-assets
+../build/moonshine-cpp-test
+```
+
+### Build All Platform Packages
+
+To build packages for all platforms (requires platform SDKs):
+
+```bash
+./scripts/build-all-platforms.sh
+```
+
+This builds:
+- Python wheel
+- Swift framework
+- Android AAR
+- Windows DLLs
+
+### Language Bindings
+
+Binding source code locations:
+
+- **Python**: `python/src/moonshine_voice/`
+- **Swift**: `swift/Sources/MoonshineVoice/`
+- **Android**: `android/src/main/java/`
+- **C++ Header**: `core/moonshine-cpp.h`
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Python: Module not found">
+    ```bash
+    # Ensure pip installed to correct Python
+    python --version
+    pip --version
+    
+    # Reinstall
+    pip install --force-reinstall moonshine-voice
+    ```
+  </Accordion>
+
+  <Accordion title="iOS/macOS: Package not found">
+    - Ensure Xcode is up to date
+    - Try deleting derived data: `rm -rf ~/Library/Developer/Xcode/DerivedData`
+    - Verify internet connection (SPM needs to download)
+    - Check minimum deployment target (iOS 14+, macOS 13+)
+  </Accordion>
+
+  <Accordion title="Android: Build errors">
+    - Verify Gradle version is 7.0+
+    - Check `minSdk` is 21 or higher
+    - Sync Gradle files
+    - Clean and rebuild: `./gradlew clean build`
+  </Accordion>
+
+  <Accordion title="Windows: Link errors">
+    - Ensure you're building for x64 (not x86)
+    - Verify all `.lib` files are in linker dependencies
+    - Check include paths point to the `include` folder
+    - Use Visual Studio 2019 or later
+  </Accordion>
+
+  <Accordion title="Linux: CMake fails">
+    ```bash
+    # Install build dependencies
+    sudo apt-get update
+    sudo apt-get install build-essential cmake
+    
+    # Check CMake version
+    cmake --version  # Should be 3.15+
+    ```
+  </Accordion>
+
+  <Accordion title="Raspberry Pi: Permission denied">
+    ```bash
+    # Audio device permissions
+    sudo usermod -a -G audio $USER
+    
+    # Reboot
+    sudo reboot
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card
+    title="Quickstart Guide"
+    icon="rocket"
+    href="/quickstart"
+  >
+    Start transcribing in under 2 minutes
+  </Card>
+  <Card
+    title="Python API Guide"
+    icon="book"
+    href="/python-guide"
+  >
+    Complete API reference and examples
+  </Card>
+  <Card
+    title="Examples"
+    icon="code"
+    href="/examples"
+  >
+    Platform-specific code examples
+  </Card>
+  <Card
+    title="Model Selection"
+    icon="brain"
+    href="/models"
+  >
+    Choose the right model for your needs
+  </Card>
+</CardGroup>
+
+## Support
+
+Need help with installation?
+
+<CardGroup cols={2}>
+  <Card
+    title="Discord Community"
+    icon="discord"
+    href="https://discord.gg/27qp9zSRXF"
+  >
+    Get live support from the team
+  </Card>
+  <Card
+    title="GitHub Issues"
+    icon="github"
+    href="https://github.com/moonshine-ai/moonshine/issues"
+  >
+    Report installation problems
+  </Card>
+</CardGroup>

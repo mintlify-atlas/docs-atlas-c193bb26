@@ -1,0 +1,395 @@
+---
+title: "Data Structures"
+description: "Java/Android API reference for Moonshine Voice data structures"
+---
+
+## TranscriptLine
+
+A single line of transcription representing a phrase or segment of speech.
+
+```java
+public class TranscriptLine
+```
+
+### Fields
+
+<ParamField path="text" type="String">
+  UTF-8 encoded transcription text
+</ParamField>
+
+<ParamField path="audioData" type="float[]">
+  Audio data for this line if available (16KHz float PCM, -1.0 to 1.0)
+</ParamField>
+
+<ParamField path="startTime" type="float">
+  Time offset from the start of the audio in seconds
+</ParamField>
+
+<ParamField path="duration" type="float">
+  Duration of the segment in seconds
+</ParamField>
+
+<ParamField path="id" type="long">
+  Stable identifier for the line (unique within a session)
+</ParamField>
+
+<ParamField path="isComplete" type="boolean">
+  Whether the line is complete. When `true`, the text will not change anymore.
+</ParamField>
+
+<ParamField path="isUpdated" type="boolean">
+  Whether the line has been updated since the previous call (streaming only)
+</ParamField>
+
+<ParamField path="isNew" type="boolean">
+  Whether the line was newly added since the previous call (streaming only)
+</ParamField>
+
+<ParamField path="hasTextChanged" type="boolean">
+  Whether the text has changed since the previous call (streaming only)
+</ParamField>
+
+<ParamField path="hasSpeakerId" type="boolean">
+  Whether a speaker ID has been calculated for the line
+</ParamField>
+
+<ParamField path="speakerId" type="long">
+  The speaker ID for the line (only valid if `hasSpeakerId` is `true`)
+</ParamField>
+
+<ParamField path="speakerIndex" type="int">
+  The order the speaker appeared in the current transcript (0-based)
+</ParamField>
+
+<ParamField path="lastTranscriptionLatencyMs" type="int">
+  The latency of the last transcription operation in milliseconds
+</ParamField>
+
+### Methods
+
+#### toString
+
+Returns a string representation of the transcript line.
+
+```java
+public String toString()
+```
+
+**Example:**
+
+```java
+TranscriptLine line = // ... from event
+
+System.out.println("[" + line.startTime + "s] " + line.text);
+System.out.println("Duration: " + line.duration + "s");
+System.out.println("Complete: " + line.isComplete);
+
+if (line.hasSpeakerId) {
+    System.out.println("Speaker " + (line.speakerIndex + 1));
+}
+
+// Full details
+System.out.println(line.toString());
+```
+
+## Transcript
+
+A complete transcript containing multiple lines.
+
+```java
+public class Transcript
+```
+
+### Fields
+
+<ParamField path="lines" type="TranscriptLine[]">
+  Array of all lines in the transcript in chronological order
+</ParamField>
+
+**Example:**
+
+```java
+Transcript transcript = transcriber.transcribeWithoutStreaming(
+    audioData,
+    16000
+);
+
+for (TranscriptLine line : transcript.lines) {
+    System.out.println("[" + line.startTime + "s] " + line.text);
+}
+
+// Get full text
+StringBuilder fullText = new StringBuilder();
+for (TranscriptLine line : transcript.lines) {
+    if (fullText.length() > 0) {
+        fullText.append(" ");
+    }
+    fullText.append(line.text);
+}
+System.out.println("Full transcript: " + fullText.toString());
+```
+
+## TranscriptEvent (Interface)
+
+Base interface for all transcript events. Uses the Visitor pattern for type-safe event handling.
+
+```java
+public interface TranscriptEvent
+```
+
+### Methods
+
+#### accept
+
+Accept a visitor to handle this event.
+
+```java
+void accept(Visitor visitor)
+```
+
+### Visitor Interface
+
+Interface for handling different event types.
+
+```java
+interface Visitor {
+    void onLineStarted(LineStarted event);
+    void onLineUpdated(LineUpdated event);
+    void onLineTextChanged(LineTextChanged event);
+    void onLineCompleted(LineCompleted event);
+    void onError(Error event);
+}
+```
+
+**Example:**
+
+```java
+transcriber.addListener(event -> {
+    event.accept(new TranscriptEvent.Visitor() {
+        @Override
+        public void onLineStarted(TranscriptEvent.LineStarted e) {
+            // Handle line started
+        }
+        
+        @Override
+        public void onLineUpdated(TranscriptEvent.LineUpdated e) {
+            // Handle line updated
+        }
+        
+        @Override
+        public void onLineTextChanged(TranscriptEvent.LineTextChanged e) {
+            // Handle text changed
+        }
+        
+        @Override
+        public void onLineCompleted(TranscriptEvent.LineCompleted e) {
+            // Handle line completed
+        }
+        
+        @Override
+        public void onError(TranscriptEvent.Error e) {
+            // Handle error
+        }
+    });
+});
+```
+
+## TranscriptEvent.LineStarted
+
+Event emitted when a new transcription line starts.
+
+```java
+class LineStarted implements TranscriptEvent
+```
+
+### Fields
+
+<ParamField path="line" type="TranscriptLine">
+  The transcript line associated with this event
+</ParamField>
+
+<ParamField path="streamHandle" type="int">
+  The handle of the stream that emitted this event
+</ParamField>
+
+**Example:**
+
+```java
+@Override
+public void onLineStarted(TranscriptEvent.LineStarted event) {
+    System.out.println("New line: " + event.line.text);
+}
+```
+
+## TranscriptEvent.LineUpdated
+
+Event emitted when an existing transcription line is updated.
+
+```java
+class LineUpdated implements TranscriptEvent
+```
+
+### Fields
+
+<ParamField path="line" type="TranscriptLine">
+  The transcript line associated with this event
+</ParamField>
+
+<ParamField path="streamHandle" type="int">
+  The handle of the stream that emitted this event
+</ParamField>
+
+**Example:**
+
+```java
+@Override
+public void onLineUpdated(TranscriptEvent.LineUpdated event) {
+    System.out.println("Updated: " + event.line.text);
+}
+```
+
+## TranscriptEvent.LineTextChanged
+
+Event emitted when the text of a transcription line changes.
+
+```java
+class LineTextChanged implements TranscriptEvent
+```
+
+### Fields
+
+<ParamField path="line" type="TranscriptLine">
+  The transcript line associated with this event
+</ParamField>
+
+<ParamField path="streamHandle" type="int">
+  The handle of the stream that emitted this event
+</ParamField>
+
+**Example:**
+
+```java
+@Override
+public void onLineTextChanged(TranscriptEvent.LineTextChanged event) {
+    // Update UI with new text
+    runOnUiThread(() -> {
+        textView.setText(event.line.text);
+    });
+}
+```
+
+## TranscriptEvent.LineCompleted
+
+Event emitted when a transcription line is completed.
+
+```java
+class LineCompleted implements TranscriptEvent
+```
+
+### Fields
+
+<ParamField path="line" type="TranscriptLine">
+  The transcript line associated with this event
+</ParamField>
+
+<ParamField path="streamHandle" type="int">
+  The handle of the stream that emitted this event
+</ParamField>
+
+**Example:**
+
+```java
+@Override
+public void onLineCompleted(TranscriptEvent.LineCompleted event) {
+    System.out.println("Final: " + event.line.text);
+    // Save to database, process final result, etc.
+}
+```
+
+## TranscriptEvent.Error
+
+Event emitted when an error occurs.
+
+```java
+class Error implements TranscriptEvent
+```
+
+### Fields
+
+<ParamField path="cause" type="Throwable">
+  The throwable that caused the error
+</ParamField>
+
+<ParamField path="streamHandle" type="int">
+  The handle of the stream that emitted this event
+</ParamField>
+
+**Example:**
+
+```java
+@Override
+public void onError(TranscriptEvent.Error event) {
+    System.err.println("Error: " + event.cause.getMessage());
+    event.cause.printStackTrace();
+}
+```
+
+## Model Architecture Constants
+
+Model architecture constants are defined in the `JNI` class:
+
+```java
+public class JNI {
+    public static final int MOONSHINE_MODEL_ARCH_TINY = 0;
+    public static final int MOONSHINE_MODEL_ARCH_BASE = 1;
+    public static final int MOONSHINE_MODEL_ARCH_TINY_STREAMING = 2;
+    public static final int MOONSHINE_MODEL_ARCH_BASE_STREAMING = 3;
+    public static final int MOONSHINE_MODEL_ARCH_SMALL_STREAMING = 4;
+    public static final int MOONSHINE_MODEL_ARCH_MEDIUM_STREAMING = 5;
+    
+    public static final int MOONSHINE_FLAG_FORCE_UPDATE = 1;
+}
+```
+
+**Example:**
+
+```java
+import ai.moonshine.voice.JNI;
+
+// Use model architecture constants
+transcriber.loadFromFiles(
+    modelPath,
+    JNI.MOONSHINE_MODEL_ARCH_MEDIUM_STREAMING
+);
+```
+
+## Helper Classes
+
+### TranscriberOption
+
+Represents a configuration option for the transcriber.
+
+```java
+public class TranscriberOption {
+    public String key;
+    public String value;
+    
+    public TranscriberOption(String key, String value) {
+        this.key = key;
+        this.value = value;
+    }
+}
+```
+
+**Example:**
+
+```java
+import ai.moonshine.voice.TranscriberOption;
+import java.util.ArrayList;
+import java.util.List;
+
+List<TranscriberOption> options = new ArrayList<>();
+options.add(new TranscriberOption("max_tokens_per_second", "13.0"));
+
+Transcriber transcriber = new Transcriber(options);
+```

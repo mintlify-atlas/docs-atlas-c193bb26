@@ -1,0 +1,650 @@
+---
+title: 'Debugging and Troubleshooting'
+description: 'Debug transcription issues, audio problems, and performance bottlenecks'
+---
+
+This guide covers debugging techniques and tools for troubleshooting Moonshine Voice applications.
+
+## Console Logs
+
+The library logs detailed information to help diagnose issues.
+
+### Viewing Logs
+
+Logs are printed to `stderr` (or console equivalent):
+
+```python
+import sys
+from moonshine_voice import Transcriber
+
+try:
+    transcriber = Transcriber(
+        model_path="/invalid/path",
+        model_arch=1
+    )
+except Exception as e:
+    print(f"Error: {e}", file=sys.stderr)
+    # Check stderr for detailed logs from core library
+```
+
+### Common Log Messages
+
+**Model loading errors:**
+```
+Failed to load transcriber: Model file not found
+```
+
+**Audio processing issues:**
+```
+MicTranscriber: Input overflow detected
+```
+
+**Performance warnings:**
+```
+Transcription taking longer than expected
+```
+
+## Debug Options
+
+Enable debugging options when creating a transcriber:
+
+```python
+options = {
+    "save_input_wav_path": "/tmp/debug",
+    "log_api_calls": "true",
+    "log_ort_runs": "true",
+    "log_output_text": "true"
+}
+
+transcriber = Transcriber(
+    model_path=model_path,
+    model_arch=model_arch,
+    options=options
+)
+```
+
+### Available Debug Options
+
+| Option | Description |
+|--------|-------------|
+| `save_input_wav_path` | Save received audio as WAV files |
+| `log_api_calls` | Log all C API function calls |
+| `log_ort_runs` | Log ONNX Runtime inference timing |
+| `log_output_text` | Log transcription results to console |
+
+## Saving Input Audio
+
+Capture exactly what audio the transcriber receives:
+
+```python
+options = {
+    "save_input_wav_path": "./debug_audio"
+}
+
+transcriber = Transcriber(
+    model_path=model_path,
+    model_arch=model_arch,
+    options=options
+)
+
+transcriber.start()
+transcriber.add_audio(audio_data, sample_rate)
+transcriber.stop()
+
+# Check ./debug_audio/input_1.wav
+```
+
+### What Gets Saved
+
+- **Filename**: `input_1.wav`, `input_2.wav`, etc. (one per stream)
+- **Format**: 16kHz mono WAV files
+- **Content**: Exact audio received by transcriber (after conversion)
+- **Lifecycle**: Overwritten on each session start
+
+### Debugging Audio Issues
+
+<Steps>
+  <Step title="Enable audio saving">
+    ```python
+    options = {"save_input_wav_path": "."}
+    transcriber = Transcriber(model_path, model_arch, options=options)
+    ```
+  </Step>
+
+  <Step title="Run your transcription">
+    ```python
+    transcriber.start()
+    transcriber.add_audio(audio_data, sample_rate)
+    transcriber.stop()
+    ```
+  </Step>
+
+  <Step title="Listen to saved audio">
+    ```bash
+    # Play the saved file
+    play input_1.wav
+    # Or use any audio player
+    ```
+  </Step>
+
+  <Step title="Check audio quality">
+    - Is audio audible and clear?
+    - Is speech comprehensible?
+    - Are there distortions or artifacts?
+    - Is the volume appropriate?
+  </Step>
+</Steps>
+
+<Note>
+  If saved audio sounds wrong, the issue is in your audio capture/conversion code, not the transcriber.
+</Note>
+
+## API Call Logging
+
+Track all API interactions:
+
+```python
+options = {"log_api_calls": "true"}
+
+transcriber = Transcriber(
+    model_path=model_path,
+    model_arch=model_arch,
+    options=options
+)
+```
+
+Example output:
+```
+[API] moonshine_load_transcriber_from_files(path=/models/base-en, arch=1)
+[API] moonshine_create_stream(transcriber=0, flags=0)
+[API] moonshine_start_stream(transcriber=0, stream=1)
+[API] moonshine_transcribe_add_audio_to_stream(transcriber=0, stream=1, length=1600)
+[API] moonshine_transcribe_stream(transcriber=0, stream=1, flags=0)
+[API] moonshine_stop_stream(transcriber=0, stream=1)
+```
+
+### When to Use API Logging
+
+- Debugging call ordering issues
+- Tracking stream lifecycle
+- Investigating crashes
+- Understanding library flow
+
+<Warning>
+  API logging is verbose. Enable only when actively debugging.
+</Warning>
+
+## Performance Debugging
+
+### ONNX Runtime Timing
+
+Log model inference performance:
+
+```python
+options = {"log_ort_runs": "true"}
+
+transcriber = Transcriber(
+    model_path=model_path,
+    model_arch=model_arch,
+    options=options
+)
+```
+
+Output:
+```
+[ORT] encoder: 45.2ms
+[ORT] decoder: 23.1ms
+[ORT] adapter: 12.3ms
+[ORT] total: 80.6ms
+```
+
+### Measuring Transcription Latency
+
+```python
+import time
+
+class LatencyListener(TranscriptEventListener):
+    def __init__(self):
+        self.line_start_time = None
+    
+    def on_line_started(self, event):
+        self.line_start_time = time.time()
+    
+    def on_line_completed(self, event):
+        elapsed = time.time() - self.line_start_time
+        lib_latency = event.line.last_transcription_latency_ms
+        
+        print(f"Total time: {elapsed*1000:.0f}ms")
+        print(f"Library latency: {lib_latency:.0f}ms")
+        print(f"Audio duration: {event.line.duration:.2f}s")
+        
+        # Real-time factor (lower is better)
+        rtf = lib_latency / (event.line.duration * 1000)
+        print(f"Real-time factor: {rtf:.2f}x")
+```
+
+### Benchmark Mode
+
+Run built-in benchmarks:
+
+```bash
+cd moonshine/core
+mkdir build && cd build
+cmake .. -DCMAKE_BUILD_TYPE=Release
+cmake --build .
+./benchmark --model-path /path/to/model --model-arch 3
+```
+
+Output:
+```
+Processed 10.5s audio in 0.85s (8.1% of real-time)
+Average latency: 67ms
+Streaming throughput: 12.35x real-time
+```
+
+## Common Issues
+
+### Issue: Poor Transcription Quality
+
+<AccordionGroup>
+  <Accordion title="Check input audio quality">
+    ```python
+    options = {"save_input_wav_path": "."}
+    transcriber = Transcriber(model_path, model_arch, options=options)
+    ```
+    
+    Listen to `input_1.wav` to verify:
+    - Audio is clear and intelligible
+    - Sample rate is correct
+    - No distortion or clipping
+    - Appropriate volume level
+  </Accordion>
+
+  <Accordion title="Use appropriate model">
+    Larger models provide better accuracy:
+    
+    ```python
+    # Better accuracy
+    model_path, model_arch = get_model_for_language(
+        "en",
+        wanted_model_arch=ModelArch.MEDIUM_STREAMING
+    )
+    ```
+  </Accordion>
+
+  <Accordion title="Check language setting">
+    Use the correct language model:
+    
+    ```python
+    # Spanish audio needs Spanish model
+    model_path, model_arch = get_model_for_language("es")
+    ```
+  </Accordion>
+
+  <Accordion title="Adjust VAD threshold">
+    For noisy environments or soft speech:
+    
+    ```python
+    options = {
+        "vad_threshold": "0.3"  # Lower = more sensitive (default: 0.5)
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+### Issue: Non-Latin Languages Cut Off
+
+<Warning>
+  For Arabic, Chinese, Japanese, Korean, etc., increase token threshold:
+</Warning>
+
+```python
+options = {
+    "max_tokens_per_second": "13.0"  # Default: 6.5
+}
+
+transcriber = Transcriber(
+    model_path=model_path,
+    model_arch=model_arch,
+    options=options
+)
+```
+
+### Issue: High Latency
+
+<AccordionGroup>
+  <Accordion title="Use streaming models">
+    Streaming models have much lower latency:
+    
+    ```python
+    # Good
+    model_arch = ModelArch.SMALL_STREAMING
+    
+    # Avoid for real-time
+    model_arch = ModelArch.BASE  # Non-streaming
+    ```
+  </Accordion>
+
+  <Accordion title="Reduce model size">
+    Smaller models are faster:
+    
+    ```python
+    # Faster
+    model_arch = ModelArch.TINY_STREAMING
+    
+    # Slower but more accurate
+    model_arch = ModelArch.MEDIUM_STREAMING
+    ```
+  </Accordion>
+
+  <Accordion title="Increase update interval">
+    Reduce intermediate updates:
+    
+    ```python
+    transcriber = Transcriber(
+        model_path=model_path,
+        model_arch=model_arch,
+        update_interval=1.0  # Default: 0.5
+    )
+    ```
+  </Accordion>
+
+  <Accordion title="Optimize audio chunk size">
+    Smaller chunks = lower latency:
+    
+    ```python
+    chunk_duration = 0.05  # 50ms chunks
+    chunk_size = int(chunk_duration * sample_rate)
+    
+    for i in range(0, len(audio_data), chunk_size):
+        chunk = audio_data[i:i + chunk_size]
+        transcriber.add_audio(chunk, sample_rate)
+    ```
+  </Accordion>
+</AccordionGroup>
+
+### Issue: No Audio Detected
+
+<AccordionGroup>
+  <Accordion title="Check microphone permissions">
+    Ensure your application has microphone access:
+    
+    ```python
+    import sounddevice as sd
+    
+    try:
+        # Test microphone access
+        print(sd.query_devices())
+    except Exception as e:
+        print(f"Microphone error: {e}")
+    ```
+  </Accordion>
+
+  <Accordion title="Test audio capture">
+    Verify audio is being captured:
+    
+    ```python
+    import sounddevice as sd
+    import numpy as np
+    
+    duration = 2  # seconds
+    print("Recording...")
+    recording = sd.rec(int(duration * 16000), samplerate=16000, channels=1)
+    sd.wait()
+    
+    # Check if audio was captured
+    print(f"Max amplitude: {np.max(np.abs(recording))}")
+    if np.max(np.abs(recording)) < 0.01:
+        print("Warning: Very quiet or no audio detected")
+    ```
+  </Accordion>
+
+  <Accordion title="Lower VAD threshold">
+    Make voice detection more sensitive:
+    
+    ```python
+    options = {
+        "vad_threshold": "0.2",  # Very sensitive
+        "vad_window_duration": "0.3"  # Faster detection
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+### Issue: Crashes or Exceptions
+
+<AccordionGroup>
+  <Accordion title="Check model path">
+    Verify model files exist:
+    
+    ```python
+    import os
+    
+    model_path = "/path/to/model"
+    
+    # Check directory exists
+    if not os.path.isdir(model_path):
+        print(f"Error: {model_path} is not a directory")
+    
+    # Check for required files
+    required_files = ["encoder_model.ort", "decoder_model_merged.ort", "tokenizer.bin"]
+    for file in required_files:
+        filepath = os.path.join(model_path, file)
+        if not os.path.exists(filepath):
+            print(f"Missing: {filepath}")
+    ```
+  </Accordion>
+
+  <Accordion title="Verify model architecture">
+    Ensure architecture matches model:
+    
+    ```python
+    from moonshine_voice import get_model_for_language
+    
+    # Let library determine correct architecture
+    model_path, model_arch = get_model_for_language("en")
+    
+    transcriber = Transcriber(model_path=model_path, model_arch=model_arch)
+    ```
+  </Accordion>
+
+  <Accordion title="Check audio format">
+    Ensure audio is in correct format:
+    
+    ```python
+    import numpy as np
+    
+    # Audio should be float32, mono, range [-1.0, 1.0]
+    audio_data = audio_data.astype(np.float32)
+    if audio_data.ndim > 1:
+        audio_data = np.mean(audio_data, axis=1)  # Convert to mono
+    audio_data = np.clip(audio_data, -1.0, 1.0)  # Ensure range
+    
+    transcriber.add_audio(audio_data.tolist(), sample_rate)
+    ```
+  </Accordion>
+
+  <Accordion title="Clean up resources">
+    Always close transcribers and streams:
+    
+    ```python
+    try:
+        transcriber.start()
+        # ... use transcriber ...
+    finally:
+        transcriber.stop()
+        transcriber.close()
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Debugging Voice Activity Detection (VAD)
+
+### VAD Configuration
+
+```python
+options = {
+    # Sensitivity (0.0-1.0, default: 0.5)
+    "vad_threshold": "0.5",
+    
+    # Averaging window (default: 0.5s)
+    "vad_window_duration": "0.5",
+    
+    # Audio prepended when speech detected (default: 8192 samples)
+    "vad_look_behind_sample_count": "8192",
+    
+    # Maximum segment length (default: 15s)
+    "vad_max_segment_duration": "15.0"
+}
+```
+
+### Common VAD Issues
+
+**Speech cut off too early:**
+```python
+options = {
+    "vad_threshold": "0.3",  # Lower threshold
+    "vad_window_duration": "0.7"  # Longer averaging
+}
+```
+
+**Too much background noise:**
+```python
+options = {
+    "vad_threshold": "0.7",  # Higher threshold
+    "vad_window_duration": "0.3"  # Faster response
+}
+```
+
+**Missing start of speech:**
+```python
+options = {
+    "vad_look_behind_sample_count": "16384"  # More prepended audio
+}
+```
+
+## Debugging Tools
+
+### Audio Inspection
+
+```python
+import numpy as np
+import matplotlib.pyplot as plt
+
+def analyze_audio(audio_data, sample_rate):
+    """Visualize audio for debugging."""
+    
+    # Time domain
+    time = np.arange(len(audio_data)) / sample_rate
+    plt.figure(figsize=(12, 8))
+    
+    plt.subplot(3, 1, 1)
+    plt.plot(time, audio_data)
+    plt.title('Waveform')
+    plt.xlabel('Time (s)')
+    plt.ylabel('Amplitude')
+    
+    # Statistics
+    plt.subplot(3, 1, 2)
+    plt.text(0.1, 0.8, f"Max: {np.max(audio_data):.3f}")
+    plt.text(0.1, 0.6, f"Min: {np.min(audio_data):.3f}")
+    plt.text(0.1, 0.4, f"Mean: {np.mean(audio_data):.3f}")
+    plt.text(0.1, 0.2, f"RMS: {np.sqrt(np.mean(audio_data**2)):.3f}")
+    plt.axis('off')
+    plt.title('Statistics')
+    
+    # Spectrogram
+    plt.subplot(3, 1, 3)
+    plt.specgram(audio_data, Fs=sample_rate)
+    plt.title('Spectrogram')
+    plt.xlabel('Time (s)')
+    plt.ylabel('Frequency (Hz)')
+    
+    plt.tight_layout()
+    plt.savefig('audio_analysis.png')
+    print("Saved audio_analysis.png")
+
+# Usage
+from moonshine_voice.utils import load_wav_file
+audio_data, sample_rate = load_wav_file("audio.wav")
+analyze_audio(audio_data, sample_rate)
+```
+
+### Event Flow Tracer
+
+```python
+class DebugListener(TranscriptEventListener):
+    """Comprehensive event logger for debugging."""
+    
+    def __init__(self):
+        self.event_count = 0
+        self.line_history = {}
+    
+    def _log(self, event_type, event):
+        self.event_count += 1
+        line_id = event.line.line_id
+        stream = event.stream_handle
+        
+        print(f"\n[{self.event_count}] {event_type}")
+        print(f"  Stream: {stream}")
+        print(f"  Line ID: {line_id}")
+        print(f"  Text: '{event.line.text}'")
+        print(f"  Start: {event.line.start_time:.2f}s")
+        print(f"  Duration: {event.line.duration:.2f}s")
+        print(f"  Complete: {event.line.is_complete}")
+        print(f"  New: {event.line.is_new}")
+        print(f"  Updated: {event.line.is_updated}")
+        print(f"  Text Changed: {event.line.has_text_changed}")
+        
+        if line_id not in self.line_history:
+            self.line_history[line_id] = []
+        self.line_history[line_id].append(event_type)
+    
+    def on_line_started(self, event):
+        self._log("LINE_STARTED", event)
+    
+    def on_line_updated(self, event):
+        self._log("LINE_UPDATED", event)
+    
+    def on_line_text_changed(self, event):
+        self._log("LINE_TEXT_CHANGED", event)
+    
+    def on_line_completed(self, event):
+        self._log("LINE_COMPLETED", event)
+    
+    def on_error(self, event):
+        print(f"\n[{self.event_count}] ERROR")
+        print(f"  Stream: {event.stream_handle}")
+        print(f"  Error: {event.error}")
+    
+    def print_summary(self):
+        print(f"\n{'='*50}")
+        print(f"Total events: {self.event_count}")
+        print(f"Lines processed: {len(self.line_history)}")
+        for line_id, events in self.line_history.items():
+            print(f"  Line {line_id}: {' -> '.join(events)}")
+
+# Usage
+debug_listener = DebugListener()
+transcriber.add_listener(debug_listener)
+
+# After transcription
+debug_listener.print_summary()
+```
+
+## Getting Help
+
+If you're still stuck:
+
+1. **Check console logs** - Look for error messages in stderr
+2. **Save input audio** - Verify audio quality with `save_input_wav_path`
+3. **Enable API logging** - Track function calls with `log_api_calls`
+4. **Test with example audio** - Use provided test files
+5. **Join Discord** - Get live support at https://discord.gg/27qp9zSRXF
+6. **File an issue** - https://github.com/moonshine-ai/moonshine
+
+## See Also
+
+- [Transcription Guide](/guides/transcription) - Core transcription concepts
+- [Streaming Guide](/guides/streaming) - Real-time processing patterns
+- [Downloading Models](/guides/downloading-models) - Model management
